@@ -104,7 +104,7 @@
             <label>Maturity<input id="maturity" type="date" value="2033-06-15"></label>
             <label class="suffix">Coupon<input id="coupon" type="number" value="4.25" min="0" step="0.01"><span>%</span></label>
             <label>Frequency<select id="frequency"><option value="1">Annual</option><option value="2" selected>Semiannual</option><option value="4">Quarterly</option></select></label>
-            <label class="suffix">Face value<input id="face" type="number" value="1000000" min="1" step="1000"><span>$</span></label>
+            <label class="suffix">Face value<input id="face" type="text" inputmode="numeric" value="1,000,000" autocomplete="off"><span>$</span></label>
             <label>Day count<select id="dayCount"><option value="actual" selected>Actual / Actual</option><option value="30">30 / 360</option></select></label>
           </div>
         </div>
@@ -161,7 +161,7 @@
 <script>
 (() => {
   const $ = id => document.getElementById(id);
-  const inputs = ['settle','maturity','coupon','frequency','face','dayCount','startValue','reinvestMode','reinvestRate'].map($);
+  const inputs = ['settle','maturity','coupon','frequency','dayCount','startValue','reinvestMode','reinvestRate'].map($);
   let mode = 'yield', state = null, shockSeq = 1;
   const money = new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0});
   const num2 = new Intl.NumberFormat('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -243,8 +243,9 @@
   function setTone(el,v){ el.classList.toggle('positive',v>0); el.classList.toggle('negative',v<0); }
   function update(){
     $('error').textContent='';
-    const p={settle:date($('settle').value),maturity:date($('maturity').value),coupon:+$('coupon').value/100,freq:+$('frequency').value,face:+$('face').value,kind:$('dayCount').value,reinvestMode:$('reinvestMode').value,reinvestRate:+$('reinvestRate').value/100};
+    const p={settle:date($('settle').value),maturity:date($('maturity').value),coupon:+$('coupon').value/100,freq:+$('frequency').value,face:Number($('face').value.replace(/,/g,'')),kind:$('dayCount').value,reinvestMode:$('reinvestMode').value,reinvestRate:+$('reinvestRate').value/100};
     if(!(p.maturity>p.settle)){ $('error').textContent='Maturity must be after settlement.'; return; }
+    if(!(p.face>0)){ $('error').textContent='Face value must be greater than zero.'; return; }
     p.shocks=[...document.querySelectorAll('.shock-row')].map(row=>({date:date(row.querySelector('.shock-date').value),bp:+row.querySelector('.shock-bp').value})).filter(s=>Number.isFinite(s.bp)&&s.date>p.settle&&s.date<p.maturity).sort((a,b)=>a.date-b.date);
     const v=+$('startValue').value;
     p.y=mode==='yield'?v/100:solveYield(v,p);
@@ -314,10 +315,15 @@
     const cash=$('reinvestMode').value==='cash'; $('reinvestRateLabel').hidden=!cash;
     $('reinvestNote').textContent=cash?'Coupons enter a cash account and compound at the fixed annual effective return.':'Coupons buy additional face value at the bond’s dirty price on each payment date.';
   }
+  function formatFace(){
+    const el=$('face'), digits=el.value.replace(/\D/g,'');
+    el.value=digits?Number(digits).toLocaleString('en-US'):'';
+  }
   function setMode(next){ mode=next; $('yieldMode').classList.toggle('active',mode==='yield');$('priceMode').classList.toggle('active',mode==='price');$('valueLabel').firstChild.textContent=mode==='yield'?'Yield to maturity':'Clean price per 100';$('valueUnit').textContent=mode==='yield'?'%':'$';$('startValue').value=mode==='yield'?'4.50':'98.50';update(); }
   $('yieldMode').onclick=()=>setMode('yield'); $('priceMode').onclick=()=>setMode('price');
   $('addShock').onclick=()=>{ const s=date($('settle').value),m=date($('maturity').value); addShock(iso(new Date(+s+(+m-+s)/2)),25); update(); };
   inputs.forEach(el=>el.addEventListener('input',update));
+  $('face').addEventListener('input',()=>{formatFace();update();});
   $('reinvestMode').addEventListener('change',()=>{updateReinvestUI();update();});
   new ResizeObserver(draw).observe($('chartWrap'));
   const defaultSettle=new Date(), defaultMaturity=addMonths(defaultSettle,120);
