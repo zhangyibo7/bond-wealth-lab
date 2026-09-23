@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bond Wealth Lab</title>
+  <meta name="description" content="Explore a fixed-rate bond's nonlinear holding-period wealth across yield shocks.">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b1220'/%3E%3Cpath d='M11 44c10-1 12-24 22-24s10 19 20 20' fill='none' stroke='%235eead4' stroke-width='5' stroke-linecap='round'/%3E%3Ccircle cx='33' cy='20' r='4' fill='%23f8fafc'/%3E%3C/svg%3E">
+  <style>
+    :root { --bg:#f6f8fb; --panel:#ffffff; --panel2:#f8fafc; --ink:#172033; --muted:#64748b; --line:#dbe3ed; --accent:#0f766e; --accent2:#2563eb; --gold:#b45309; --red:#dc2626; --shadow:0 12px 34px rgba(37,55,82,.09); }
+    * { box-sizing:border-box; }
+    [hidden] { display:none !important; }
+    body { margin:0; min-width:320px; background:radial-gradient(circle at 70% -20%, #dbeafe 0, transparent 36%), var(--bg); color:var(--ink); font:16px/1.45 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    button,input,select { font:inherit; }
+    .app { max-width:1500px; margin:auto; padding:24px; }
+    header { display:flex; align-items:end; justify-content:space-between; gap:20px; margin-bottom:20px; }
+    h1 { font-size:clamp(1.45rem,2.2vw,2.15rem); margin:0; letter-spacing:-.035em; }
+    .eyebrow { color:var(--accent); font-size:.76rem; font-weight:700; letter-spacing:.14em; text-transform:uppercase; margin-bottom:4px; }
+    .header-note { color:var(--muted); max-width:590px; text-align:right; font-size:.88rem; }
+    .workspace { display:grid; grid-template-columns:360px minmax(0,1fr); gap:18px; align-items:start; }
+    .panel { background:rgba(255,255,255,.97); border:1px solid var(--line); border-radius:18px; box-shadow:var(--shadow); }
+    .controls { padding:20px; position:sticky; top:18px; }
+    h2 { font-size:.96rem; margin:0 0 14px; letter-spacing:.01em; }
+    .section-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:12px; }
+    .section-head h2 { margin:0; }
+    .section + .section { border-top:1px solid var(--line); margin-top:18px; padding-top:18px; }
+    .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    label { display:block; color:var(--muted); font-size:.78rem; font-weight:600; letter-spacing:.01em; }
+    input,select { width:100%; margin-top:5px; color:var(--ink); background:#fff; border:1px solid #cbd5e1; border-radius:9px; padding:9px 10px; outline:none; }
+    input:focus,select:focus,button:focus-visible { border-color:var(--accent); box-shadow:0 0 0 3px rgba(94,234,212,.14); }
+    .mode { display:grid; grid-template-columns:1fr 1fr; background:#f1f5f9; border:1px solid #cbd5e1; padding:3px; border-radius:10px; margin-bottom:12px; }
+    .mode button { border:0; padding:8px; border-radius:7px; color:var(--muted); background:transparent; cursor:pointer; }
+    .mode button.active { color:#fff; background:var(--accent); font-weight:750; }
+    .suffix { position:relative; }
+    .suffix span { position:absolute; right:10px; bottom:9px; color:var(--muted); font-size:.78rem; pointer-events:none; }
+    .suffix input { padding-right:42px; }
+    .computed { margin-top:9px; color:var(--muted); font-size:.8rem; }
+    .computed strong { color:var(--ink); }
+    .error { min-height:20px; margin-top:10px; color:var(--red); font-size:.8rem; }
+    .shock-row { display:grid; grid-template-columns:minmax(0,1fr) 100px 32px; gap:8px; align-items:end; margin-bottom:9px; }
+    .small-button { border:1px solid #cbd5e1; background:#fff; color:var(--ink); border-radius:8px; padding:6px 9px; font-size:.76rem; cursor:pointer; }
+    .remove-shock { height:39px; padding:0; color:var(--muted); font-size:1rem; }
+    main { min-width:0; }
+    .stats { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:10px; margin-bottom:12px; }
+    .stat { padding:14px 15px; }
+    .stat-label { color:var(--muted); font-size:.76rem; }
+    .stat-value { font-size:1.35rem; font-weight:720; letter-spacing:-.025em; margin-top:3px; font-variant-numeric:tabular-nums; white-space:nowrap; }
+    .stat-sub { color:var(--muted); font-size:.74rem; margin-top:2px; }
+    .positive { color:var(--accent); } .negative { color:var(--red); }
+    .chart-panel { padding:18px 18px 13px; }
+    .chart-top { display:flex; justify-content:space-between; align-items:flex-start; gap:18px; margin-bottom:8px; }
+    .chart-title { font-size:1rem; font-weight:700; }
+    .chart-subtitle { color:var(--muted); font-size:.8rem; margin-top:2px; }
+    .legend { display:flex; flex-wrap:wrap; gap:14px; font-size:.76rem; color:var(--muted); }
+    .legend i { display:inline-block; width:18px; height:2px; vertical-align:middle; margin-right:5px; background:var(--accent); }
+    .legend .l2 { background:var(--accent2); border-top:1px dashed var(--accent2); }
+    #chartWrap { position:relative; height:430px; min-height:300px; }
+    svg { display:block; width:100%; height:100%; overflow:visible; }
+    .axis text { fill:var(--muted); font-size:11px; }
+    .axis line,.axis path { stroke:var(--line); }
+    .grid line { stroke:var(--line); stroke-opacity:.6; }
+    .curve { fill:none; stroke:var(--accent); stroke-width:3; vector-effect:non-scaling-stroke; }
+    .base-curve { fill:none; stroke:var(--accent2); stroke-width:1.8; stroke-dasharray:6 5; opacity:.85; vector-effect:non-scaling-stroke; }
+    .payback-line { stroke:var(--gold); stroke-width:2; stroke-dasharray:3 4; vector-effect:non-scaling-stroke; }
+    .payback-label { fill:var(--gold); font-size:11px; font-weight:700; }
+    .zero { stroke:var(--muted); stroke-dasharray:4 5; opacity:.65; }
+    .scenario-line { stroke:var(--accent2); stroke-dasharray:5 5; }
+    .scenario-dot { fill:var(--accent2); stroke:var(--panel); stroke-width:3; }
+    .hover-line { stroke:#d9e4f2; stroke-width:1; opacity:.45; }
+    .hover-dot { fill:var(--accent); stroke:var(--panel); stroke-width:3; }
+    .tooltip { position:absolute; pointer-events:none; min-width:220px; padding:11px 12px; background:#fff; border:1px solid #cbd5e1; border-radius:10px; box-shadow:0 12px 32px rgba(37,55,82,.18); font-size:.78rem; opacity:0; transform:translateY(3px); transition:opacity .08s,transform .08s; z-index:4; }
+    .tooltip.show { opacity:1; transform:none; }
+    .tooltip-head { display:flex; justify-content:space-between; gap:18px; color:var(--muted); border-bottom:1px solid var(--line); padding-bottom:7px; margin-bottom:7px; }
+    .tooltip-row { display:flex; justify-content:space-between; gap:18px; margin:4px 0; }
+    .tooltip-row strong { font-variant-numeric:tabular-nums; }
+    .breakdown { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px; }
+    .break-item { background:#f8fafc; border:1px solid var(--line); border-radius:12px; padding:11px 13px; }
+    .break-item span { color:var(--muted); font-size:.76rem; }
+    .break-item strong { display:block; margin-top:3px; font-variant-numeric:tabular-nums; }
+    .method { color:var(--muted); font-size:.76rem; padding:11px 3px 0; }
+    .payback-table-wrap { margin-top:16px; overflow-x:auto; }
+    .payback-table { width:100%; border-collapse:collapse; font-size:.8rem; font-variant-numeric:tabular-nums; }
+    .payback-table th,.payback-table td { padding:9px 10px; border-top:1px solid var(--line); text-align:right; white-space:nowrap; }
+    .payback-table th { color:var(--muted); font-weight:600; }
+    .payback-table th:first-child,.payback-table td:first-child { text-align:left; }
+    .payback-table td:last-child { color:var(--gold); font-weight:650; }
+    @media(max-width:1180px){ .workspace{grid-template-columns:320px minmax(0,1fr)} .stats{grid-template-columns:repeat(3,1fr)} }
+    @media(max-width:780px){ .app{padding:15px} header{display:block}.header-note{text-align:left;margin-top:8px}.workspace{display:block}.controls{position:static;margin-bottom:14px}.stats{grid-template-columns:1fr 1fr}#chartWrap{height:360px}.chart-top{display:block}.legend{margin-top:8px} }
+    @media(max-width:480px){ .grid2{grid-template-columns:1fr}.stats{grid-template-columns:1fr}.stat-value{font-size:1.18rem}.chart-panel{padding:14px 8px 10px}#chartWrap{height:330px}.shock-row{grid-template-columns:minmax(0,1fr) 88px 32px}.payback-table th,.payback-table td{padding:8px} }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div><div class="eyebrow">Fixed income scenario lab</div><h1>Bond Wealth Curve</h1></div>
+      <div class="header-note">Follow mark-to-market wealth from settlement to maturity. Add dated YTM shocks, then hover on any date for P&amp;L, return, and a carry / price-impact breakdown.</div>
+    </header>
+    <div class="workspace">
+      <aside class="panel controls">
+        <div class="section">
+          <h2>Bond terms</h2>
+          <div class="grid2">
+            <label>Settlement<input id="settle" type="date" value="2026-09-23"></label>
+            <label>Maturity<input id="maturity" type="date" value="2033-06-15"></label>
+            <label class="suffix">Coupon<input id="coupon" type="number" value="4.25" min="0" step="0.01"><span>%</span></label>
+            <label>Frequency<select id="frequency"><option value="1">Annual</option><option value="2" selected>Semiannual</option><option value="4">Quarterly</option></select></label>
+            <label class="suffix">Face value<input id="face" type="number" value="1000000" min="1" step="1000"><span>$</span></label>
+            <label>Day count<select id="dayCount"><option value="actual" selected>Actual / Actual</option><option value="30">30 / 360</option></select></label>
+          </div>
+        </div>
+        <div class="section">
+          <h2>Starting valuation</h2>
+          <div class="mode" role="group" aria-label="Starting valuation input">
+            <button id="yieldMode" class="active" type="button">Enter YTM</button>
+            <button id="priceMode" type="button">Enter price</button>
+          </div>
+          <label class="suffix" id="valueLabel">Yield to maturity<input id="startValue" type="number" value="4.50" step="0.01"><span id="valueUnit">%</span></label>
+          <div class="computed" id="computedValue"></div>
+        </div>
+        <div class="section">
+          <div class="section-head"><h2>Yield path</h2><button class="small-button" id="addShock" type="button">+ Add shock</button></div>
+          <div id="shockRows"></div>
+          <div class="computed">Each shock is applied on its date and persists afterward. Multiple shocks are cumulative.</div>
+          <div class="error" id="error" role="alert"></div>
+        </div>
+        <div class="section">
+          <h2>Coupon reinvestment</h2>
+          <label>Method<select id="reinvestMode"><option value="bond" selected>Reinvest in this bond</option><option value="cash">Fixed-return cash account</option></select></label>
+          <label class="suffix" id="reinvestRateLabel" hidden>Annual return<input id="reinvestRate" type="number" value="3.00" step="0.10"><span>%</span></label>
+          <div class="computed" id="reinvestNote">Coupons buy additional face value at the bond’s dirty price on each payment date.</div>
+        </div>
+      </aside>
+      <main>
+        <section class="stats" aria-live="polite">
+          <div class="panel stat"><div class="stat-label">Initial dirty value</div><div class="stat-value" id="initialWealth">—</div><div class="stat-sub" id="initialPrice">—</div></div>
+          <div class="panel stat"><div class="stat-label">Wealth at maturity</div><div class="stat-value" id="endingWealth">—</div><div class="stat-sub" id="endingPrice">Principal + coupon cash</div></div>
+          <div class="panel stat"><div class="stat-label">Hold-to-maturity P&amp;L</div><div class="stat-value" id="pnl">—</div><div class="stat-sub" id="returnPct">—</div></div>
+          <div class="panel stat"><div class="stat-label">Solved YTM</div><div class="stat-value" id="solvedYield">—</div><div class="stat-sub">Nominal, compounded at frequency</div></div>
+          <div class="panel stat"><div class="stat-label">Shock paybacks</div><div class="stat-value" id="payback">—</div><div class="stat-sub" id="paybackSub">See schedule below</div></div>
+        </section>
+        <section class="panel chart-panel">
+          <div class="chart-top">
+            <div><div class="chart-title">Wealth through maturity</div><div class="chart-subtitle" id="chartSubtitle">Dirty bond value + coupon cash</div></div>
+            <div class="legend"><span><i></i>Shocked path</span><span><i class="l2"></i>No-shock path</span><span style="color:var(--gold)">⋯ Payback level</span></div>
+          </div>
+          <div id="chartWrap">
+            <svg id="chart" role="img" aria-label="Bond wealth from settlement through maturity under dated YTM shocks"></svg>
+            <div class="tooltip" id="tooltip"></div>
+          </div>
+          <div class="payback-table-wrap">
+            <table class="payback-table">
+              <thead><tr><th>Shock date</th><th>Shock</th><th>Cumulative</th><th>Immediate impact</th><th>Payback date</th><th>Time to payback</th></tr></thead>
+              <tbody id="paybackBody"></tbody>
+            </table>
+          </div>
+          <div class="method">Yield impact = shocked-path wealth minus no-shock wealth on the same date, using the same reinvestment rule. Direct bond-price impact converges toward zero at maturity; reinvestment choices can leave a residual difference.</div>
+        </section>
+      </main>
+    </div>
+  </div>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const inputs = ['settle','maturity','coupon','frequency','face','dayCount','startValue','reinvestMode','reinvestRate'].map($);
+  let mode = 'yield', state = null, shockSeq = 1;
+  const money = new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0});
+  const num2 = new Intl.NumberFormat('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const date = s => new Date(s + 'T12:00:00');
+  const iso = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  const addMonths = (d,n) => { const x=new Date(d); const day=x.getDate(); x.setDate(1); x.setMonth(x.getMonth()+n); x.setDate(Math.min(day,new Date(x.getFullYear(),x.getMonth()+1,0).getDate())); return x; };
+  const days = (a,b) => (b-a)/86400000;
+  const dc = (a,b,kind) => kind==='30' ? ((b.getFullYear()-a.getFullYear())*360+(b.getMonth()-a.getMonth())*30+(Math.min(30,b.getDate())-Math.min(30,a.getDate()))) : days(a,b);
+  function schedule(settle,maturity,freq){
+    const months=12/freq, dates=[]; let d=new Date(maturity);
+    while(d>settle){ dates.unshift(new Date(d)); d=addMonths(d,-months); if(dates.length>500) break; }
+    return {dates,prev:d,next:dates[0]};
+  }
+  function bondMetrics(settle,maturity,coupon,freq,y,kind){
+    const s=schedule(settle,maturity,freq); if(!s.next) return null;
+    const period=dc(s.prev,s.next,kind), elapsed=dc(s.prev,settle,kind)/period;
+    const c=100*coupon/freq, base=1+y/freq;
+    if(base<=0) return null;
+    let dirty=0;
+    s.dates.forEach((d,i)=>{ const cf=c+(i===s.dates.length-1?100:0); dirty += cf/Math.pow(base,(i+1)-elapsed); });
+    const accrued=c*elapsed;
+    return {dirty,clean:dirty-accrued,accrued,schedule:s};
+  }
+  function solveYield(targetClean,p){
+    let lo=-0.95*p.freq+1e-8, hi=2;
+    const f=y=>bondMetrics(p.settle,p.maturity,p.coupon,p.freq,y,p.kind)?.clean-targetClean;
+    if(!Number.isFinite(f(lo))||!Number.isFinite(f(hi))||f(lo)*f(hi)>0) return NaN;
+    for(let i=0;i<120;i++){ const mid=(lo+hi)/2; if(f(mid)>0) lo=mid; else hi=mid; }
+    return (lo+hi)/2;
+  }
+  function cumulativeShock(d,p){ return p.shocks.filter(s=>s.date<=d).reduce((a,s)=>a+s.bp,0); }
+  function yieldAt(d,p,ignoreShocks){ return p.y+(ignoreShocks?0:cumulativeShock(d,p))/10000; }
+  function reinvestedBondWealth(d,p,ignoreShocks){
+    let face=p.face; const couponDates=schedule(p.settle,p.maturity,p.freq).dates.filter(x=>x<=d);
+    for(const payDate of couponDates){
+      if(payDate>=p.maturity) return face*(1+p.coupon/p.freq);
+      const couponCash=face*p.coupon/p.freq, px=bondMetrics(payDate,p.maturity,p.coupon,p.freq,yieldAt(payDate,p,ignoreShocks),p.kind);
+      if(!px||px.dirty<=0) return NaN;
+      face += couponCash/(px.dirty/100);
+    }
+    if(d>=p.maturity) return face*(1+p.coupon/p.freq);
+    const px=bondMetrics(d,p.maturity,p.coupon,p.freq,yieldAt(d,p,ignoreShocks),p.kind);
+    return px?face*px.dirty/100:NaN;
+  }
+  function fixedAccountWealth(d,p,ignoreShocks){
+    const y2=yieldAt(d,p,ignoreShocks), px=d>=p.maturity?0:bondMetrics(d,p.maturity,p.coupon,p.freq,y2,p.kind)?.dirty;
+    if(!Number.isFinite(px)) return NaN;
+    const rate=p.reinvestRate, payments=schedule(p.settle,p.maturity,p.freq).dates.filter(x=>x<=d);
+    let cash=0;
+    for(const payDate of payments){
+      const payment=p.face*(p.coupon/p.freq+(payDate>=p.maturity?1:0));
+      cash += payment*Math.pow(1+rate,Math.max(0,days(payDate,d)/365.25));
+    }
+    return p.face*px/100+cash;
+  }
+  function calcAtDate(d,p,ignoreShocks=false){
+    const bp=ignoreShocks?0:cumulativeShock(d,p), y2=yieldAt(d,p,ignoreShocks);
+    const wealth=p.reinvestMode==='bond'?reinvestedBondWealth(d,p,ignoreShocks):fixedAccountWealth(d,p,ignoreShocks);
+    if(!Number.isFinite(wealth)) return null;
+    const pnl=wealth-p.initialWealth;
+    return {date:d,bp,y:y2,wealth,pnl,ret:pnl/p.initialWealth};
+  }
+  function calculatePaybacks(p){
+    return p.shocks.map((shock,index)=>{
+      const before=new Date(+shock.date-1000), threshold=calcAtDate(before,p)?.wealth, after=calcAtDate(shock.date,p)?.wealth;
+      const cumulative=p.shocks.slice(0,index+1).reduce((a,s)=>a+s.bp,0), impact=after-threshold;
+      if(!Number.isFinite(threshold)||!Number.isFinite(after)) return {shock,cumulative,impact:NaN,status:'invalid'};
+      if(shock.bp<=0||impact>=0) return {shock,cumulative,threshold,impact,date:shock.date,days:0,status:'no-loss'};
+      const totalDays=Math.ceil(days(shock.date,p.maturity));
+      for(let i=1;i<=totalDays;i++){
+        const d=new Date(+shock.date+i*86400000), w=calcAtDate(d,p)?.wealth;
+        if(Number.isFinite(w)&&w>=threshold) return {shock,cumulative,threshold,impact,date:d,days:i,status:'recovered'};
+      }
+      return {shock,cumulative,threshold,impact,date:null,days:null,status:'unrecovered'};
+    });
+  }
+  function signedMoney(v){ return `${v>=0?'+':'−'}${money.format(Math.abs(v))}`; }
+  function signedPct(v){ return `${v>=0?'+':'−'}${Math.abs(v*100).toFixed(2)}%`; }
+  function setTone(el,v){ el.classList.toggle('positive',v>0); el.classList.toggle('negative',v<0); }
+  function update(){
+    $('error').textContent='';
+    const p={settle:date($('settle').value),maturity:date($('maturity').value),coupon:+$('coupon').value/100,freq:+$('frequency').value,face:+$('face').value,kind:$('dayCount').value,reinvestMode:$('reinvestMode').value,reinvestRate:+$('reinvestRate').value/100};
+    if(!(p.maturity>p.settle)){ $('error').textContent='Maturity must be after settlement.'; return; }
+    p.shocks=[...document.querySelectorAll('.shock-row')].map(row=>({date:date(row.querySelector('.shock-date').value),bp:+row.querySelector('.shock-bp').value})).filter(s=>Number.isFinite(s.bp)&&s.date>p.settle&&s.date<p.maturity).sort((a,b)=>a.date-b.date);
+    const v=+$('startValue').value;
+    p.y=mode==='yield'?v/100:solveYield(v,p);
+    if(!Number.isFinite(p.y)){ $('error').textContent='A valid YTM could not be solved from this price.'; return; }
+    p.initial=bondMetrics(p.settle,p.maturity,p.coupon,p.freq,p.y,p.kind);
+    p.initialWealth=p.initial.dirty*p.face/100;
+    const maturityPoint=calcAtDate(p.maturity,p), lastDate=p.shocks.length?p.shocks[p.shocks.length-1].date:p.maturity;
+    const selected=calcAtDate(lastDate,p), base=calcAtDate(lastDate,p,true);
+    if(!selected||!base){ $('error').textContent='A shock produces an invalid YTM.'; return; }
+    p.base=base; p.selected=selected; p.carry=base.pnl; p.priceImpact=selected.pnl-base.pnl; p.paybacks=calculatePaybacks(p);
+    $('computedValue').innerHTML=mode==='yield' ? `Clean price <strong>${p.initial.clean.toFixed(4)}</strong> · accrued ${p.initial.accrued.toFixed(4)}` : `Solved YTM <strong>${(p.y*100).toFixed(4)}%</strong> · accrued ${p.initial.accrued.toFixed(4)}`;
+    $('initialWealth').textContent=money.format(p.initialWealth); $('initialPrice').textContent=`Clean ${p.initial.clean.toFixed(4)} · Dirty ${p.initial.dirty.toFixed(4)}`;
+    $('endingWealth').textContent=money.format(maturityPoint.wealth); $('endingPrice').textContent=`${p.reinvestMode==='bond'?'Coupons reinvested in bond':'Coupons compounded at '+(p.reinvestRate*100).toFixed(2)+'%'} · ${p.shocks.length} shock${p.shocks.length===1?'':'s'}`;
+    $('pnl').textContent=signedMoney(maturityPoint.pnl); setTone($('pnl'),maturityPoint.pnl);
+    $('returnPct').textContent=`Holding-period return ${signedPct(maturityPoint.ret)}`;
+    $('solvedYield').textContent=`${(p.y*100).toFixed(4)}%`;
+    const lossRows=p.paybacks.filter(x=>x.shock.bp>0&&x.impact<0), recovered=lossRows.filter(x=>x.status==='recovered'||x.status==='no-loss').length;
+    $('payback').textContent=p.shocks.length?`${recovered} / ${lossRows.length}`:'N/A'; $('paybackSub').textContent=p.shocks.length?'Positive shocks recovered':'Add a yield shock';
+    $('paybackBody').innerHTML=p.paybacks.length?p.paybacks.map(x=>{
+      const period=x.status==='no-loss'?'No loss':x.days===null?'Not before maturity':x.days<365?`${x.days} days`:`${(x.days/365.25).toFixed(2)} years`;
+      const payDate=x.status==='no-loss'?'—':x.date?iso(x.date):'—';
+      return `<tr><td>${iso(x.shock.date)}</td><td>${x.shock.bp>=0?'+':''}${x.shock.bp.toFixed(0)} bp</td><td>${x.cumulative>=0?'+':''}${x.cumulative.toFixed(0)} bp</td><td>${Number.isFinite(x.impact)?signedMoney(x.impact):'—'}</td><td>${payDate}</td><td>${period}</td></tr>`;
+    }).join(''):`<tr><td colspan="6" style="text-align:center;color:var(--muted)">No shocks added</td></tr>`;
+    $('chartSubtitle').textContent=`${iso(p.settle)} → ${iso(p.maturity)} · initial YTM ${(p.y*100).toFixed(3)}% · ${p.shocks.length} dated shock${p.shocks.length===1?'':'s'}`;
+    state=p; draw();
+  }
+  function draw(){
+    if(!state) return;
+    const wrap=$('chartWrap'), svg=$('chart'), tip=$('tooltip'), W=Math.max(300,wrap.clientWidth), H=wrap.clientHeight;
+    const m={l:W<480?54:72,r:18,t:20,b:48}, iw=W-m.l-m.r, ih=H-m.t-m.b;
+    const start=+state.settle,end=+state.maturity, span=end-start;
+    const sampleDates=Array.from({length:241},(_,i)=>new Date(start+span*i/240));
+    const special=[state.settle,state.maturity,...state.shocks.flatMap(s=>[new Date(+s.date-1000),s.date,new Date(+s.date+1000)])];
+    const dates=[...sampleDates,...special].filter(d=>d>=state.settle&&d<=state.maturity).sort((a,b)=>a-b);
+    const data=dates.map(d=>calcAtDate(d,state)).filter(Boolean), baseData=dates.map(d=>calcAtDate(d,state,true)).filter(Boolean);
+    const ys=[...data,...baseData].map(d=>d.wealth); state.paybacks.filter(p=>p.shock.bp>0&&p.impact<0).forEach(p=>ys.push(p.threshold));
+    const yMin=Math.min(...ys),yMax=Math.max(...ys), pad=Math.max(1,(yMax-yMin)*.09), lo=yMin-pad,hi=yMax+pad;
+    const x=d=>m.l+(+d-start)/span*iw, y=v=>m.t+(hi-v)/(hi-lo)*ih;
+    const tickCount=W<520?4:6, xTicks=Array.from({length:tickCount},(_,i)=>new Date(start+span*i/(tickCount-1)));
+    const yTicks=Array.from({length:5},(_,i)=>lo+(hi-lo)*i/4);
+    const path=data.map((d,i)=>`${i?'L':'M'}${x(d.date).toFixed(2)},${y(d.wealth).toFixed(2)}`).join(' ');
+    const basePath=baseData.map((d,i)=>`${i?'L':'M'}${x(d.date).toFixed(2)},${y(d.wealth).toFixed(2)}`).join(' ');
+    svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
+    svg.innerHTML=`<g class="grid">${yTicks.map(v=>`<line x1="${m.l}" x2="${W-m.r}" y1="${y(v)}" y2="${y(v)}"/>`).join('')}</g>
+      <g class="axis">${xTicks.map(v=>`<line x1="${x(v)}" x2="${x(v)}" y1="${H-m.b}" y2="${H-m.b+5}"/><text x="${x(v)}" y="${H-m.b+20}" text-anchor="middle">${v.getFullYear()}</text>`).join('')}<text x="${m.l+iw/2}" y="${H-6}" text-anchor="middle">Date</text>
+      ${yTicks.map(v=>`<text x="${m.l-10}" y="${y(v)+4}" text-anchor="end">${Math.abs(v)>=1e6?(v/1e6).toFixed(2)+'m':Math.abs(v)>=1e3?(v/1e3).toFixed(0)+'k':v.toFixed(0)}</text>`).join('')}<text transform="translate(14 ${m.t+ih/2}) rotate(-90)" text-anchor="middle">Wealth ($)</text></g>
+      <path class="base-curve" d="${basePath}"/><path class="curve" d="${path}"/>
+      ${state.shocks.map(s=>`<line class="scenario-line" x1="${x(s.date)}" x2="${x(s.date)}" y1="${m.t}" y2="${H-m.b}"/>`).join('')}
+      ${state.paybacks.filter(p=>p.shock.bp>0&&p.impact<0).map((p,i)=>`<line class="payback-line" x1="${x(p.shock.date)}" x2="${x(p.date||state.maturity)}" y1="${y(p.threshold)}" y2="${y(p.threshold)}"/><text class="payback-label" x="${Math.min(W-m.r-4,x(p.date||state.maturity)+4)}" y="${y(p.threshold)-6}" text-anchor="end">payback ${i+1}</text>`).join('')}
+      <line id="hoverLine" class="hover-line" x1="0" x2="0" y1="${m.t}" y2="${H-m.b}" visibility="hidden"/><circle id="hoverDot" class="hover-dot" r="5" visibility="hidden"/><rect id="hit" x="${m.l}" y="${m.t}" width="${iw}" height="${ih}" fill="transparent"/>`;
+    const hit=$('hit'), hline=$('hoverLine'), hdot=$('hoverDot');
+    function hover(ev){
+      const r=svg.getBoundingClientRect(), px=(ev.clientX-r.left)*W/r.width, ms=Math.max(start,Math.min(end,start+(px-m.l)/iw*span)), dt=new Date(ms), d=calcAtDate(dt,state), base=calcAtDate(dt,state,true);
+      if(!d||!base)return; const carry=base.pnl, impact=d.pnl-carry, cx=x(dt),cy=y(d.wealth);
+      hline.setAttribute('x1',cx);hline.setAttribute('x2',cx);hline.setAttribute('visibility','visible');hdot.setAttribute('cx',cx);hdot.setAttribute('cy',cy);hdot.setAttribute('visibility','visible');
+      tip.innerHTML=`<div class="tooltip-head"><span>${iso(dt)}</span><strong>YTM ${(d.y*100).toFixed(3)}%</strong></div><div class="tooltip-row"><span>Cumulative shock</span><strong>${d.bp>=0?'+':''}${d.bp.toFixed(0)} bp</strong></div><div class="tooltip-row"><span>Wealth</span><strong>${money.format(d.wealth)}</strong></div><div class="tooltip-row"><span>Total P&amp;L</span><strong>${signedMoney(d.pnl)}</strong></div><div class="tooltip-row"><span>Return</span><strong>${signedPct(d.ret)}</strong></div><div class="tooltip-row"><span>Carry + roll-down</span><strong>${signedMoney(carry)}</strong></div><div class="tooltip-row"><span>Yield price impact</span><strong>${signedMoney(impact)}</strong></div><div class="tooltip-row"><span>Reinvestment</span><strong>${state.reinvestMode==='bond'?'Same bond':(state.reinvestRate*100).toFixed(2)+'% cash'}</strong></div>`;
+      const tx=Math.min(wrap.clientWidth-230,Math.max(4,cx+(cx>W*.68?-228:14))), ty=Math.min(H-150,Math.max(4,cy-72)); tip.style.left=tx+'px';tip.style.top=ty+'px';tip.classList.add('show');
+    }
+    hit.addEventListener('pointermove',hover); hit.addEventListener('pointerdown',hover); hit.addEventListener('pointerleave',()=>{tip.classList.remove('show');hline.setAttribute('visibility','hidden');hdot.setAttribute('visibility','hidden');});
+  }
+  function addShock(dateValue,bp=50){
+    const row=document.createElement('div'); row.className='shock-row'; row.dataset.id=shockSeq++;
+    row.innerHTML=`<label>Shock date<input class="shock-date" type="date" value="${dateValue}"></label><label class="suffix">Shock<input class="shock-bp" type="number" value="${bp}" step="5"><span>bp</span></label><button class="small-button remove-shock" type="button" aria-label="Remove shock">×</button>`;
+    row.querySelectorAll('input').forEach(el=>el.addEventListener('input',update)); row.querySelector('button').onclick=()=>{row.remove();update();}; $('shockRows').appendChild(row);
+  }
+  function updateReinvestUI(){
+    const cash=$('reinvestMode').value==='cash'; $('reinvestRateLabel').hidden=!cash;
+    $('reinvestNote').textContent=cash?'Coupons enter a cash account and compound at the fixed annual effective return.':'Coupons buy additional face value at the bond’s dirty price on each payment date.';
+  }
+  function setMode(next){ mode=next; $('yieldMode').classList.toggle('active',mode==='yield');$('priceMode').classList.toggle('active',mode==='price');$('valueLabel').firstChild.textContent=mode==='yield'?'Yield to maturity':'Clean price per 100';$('valueUnit').textContent=mode==='yield'?'%':'$';$('startValue').value=mode==='yield'?'4.50':'98.50';update(); }
+  $('yieldMode').onclick=()=>setMode('yield'); $('priceMode').onclick=()=>setMode('price');
+  $('addShock').onclick=()=>{ const s=date($('settle').value),m=date($('maturity').value); addShock(iso(new Date(+s+(+m-+s)/2)),25); update(); };
+  inputs.forEach(el=>el.addEventListener('input',update));
+  $('reinvestMode').addEventListener('change',()=>{updateReinvestUI();update();});
+  new ResizeObserver(draw).observe($('chartWrap'));
+  const defaultSettle=new Date(), defaultMaturity=addMonths(defaultSettle,120);
+  $('settle').value=iso(defaultSettle); $('maturity').value=iso(defaultMaturity);
+  addShock(iso(addMonths(defaultSettle,3)),50);
+  addShock(iso(addMonths(defaultSettle,36)),-25);
+  updateReinvestUI();
+  update();
+})();
+</script>
+</body>
+</html>
