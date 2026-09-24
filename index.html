@@ -20,6 +20,9 @@
     .workspace { display:grid; grid-template-columns:360px minmax(0,1fr); gap:18px; align-items:start; }
     .panel { background:rgba(255,255,255,.97); border:1px solid var(--line); border-radius:18px; box-shadow:var(--shadow); }
     .controls { padding:20px; position:sticky; top:18px; }
+    .model-tabs { display:grid; grid-template-columns:1fr 1fr; gap:6px; padding:4px; margin-bottom:18px; background:#eef2f7; border:1px solid var(--line); border-radius:11px; }
+    .model-tab { border:0; background:transparent; color:var(--muted); border-radius:8px; padding:9px 8px; font-weight:650; cursor:pointer; }
+    .model-tab.active { color:#fff; background:var(--accent); }
     h2 { font-size:.96rem; margin:0 0 14px; letter-spacing:.01em; }
     .section-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:12px; }
     .section-head h2 { margin:0; }
@@ -38,10 +41,16 @@
     .computed strong { color:var(--ink); }
     .error { min-height:20px; margin-top:10px; color:var(--red); font-size:.8rem; }
     .shock-row { display:grid; grid-template-columns:minmax(0,1fr) 100px 32px; gap:8px; align-items:end; margin-bottom:9px; }
+    .curve-node-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+    .curve-node-grid label { min-width:0; }
+    .curve-node-grid input { padding-right:32px; }
+    .curve-shock-row { border-top:1px solid var(--line); padding-top:11px; margin-top:11px; }
+    .curve-shock-head { display:grid; grid-template-columns:minmax(0,1fr) 32px; gap:8px; align-items:end; margin-bottom:9px; }
+    .curve-note { color:var(--muted); font-size:.76rem; margin-top:8px; }
     .small-button { border:1px solid #cbd5e1; background:#fff; color:var(--ink); border-radius:8px; padding:6px 9px; font-size:.76rem; cursor:pointer; }
     .remove-shock { height:39px; padding:0; color:var(--muted); font-size:1rem; }
     main { min-width:0; }
-    .stats { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:10px; margin-bottom:12px; }
+    .stats { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:10px; margin-bottom:12px; }
     .stat { padding:14px 15px; }
     .stat-label { color:var(--muted); font-size:.76rem; }
     .stat-value { font-size:1.35rem; font-weight:720; letter-spacing:-.025em; margin-top:3px; font-variant-numeric:tabular-nums; white-space:nowrap; }
@@ -99,6 +108,10 @@
     </header>
     <div class="workspace">
       <aside class="panel controls">
+        <div class="model-tabs" role="tablist" aria-label="Bond model">
+          <button class="model-tab active" id="simpleTab" type="button" role="tab" aria-selected="true">Simple bond</button>
+          <button class="model-tab" id="curveTab" type="button" role="tab" aria-selected="false">Curve</button>
+        </div>
         <div class="section">
           <h2>Bond terms</h2>
           <div class="grid2">
@@ -110,7 +123,7 @@
             <label>Day count<select id="dayCount"><option value="actual" selected>Actual / Actual</option><option value="30">30 / 360</option></select></label>
           </div>
         </div>
-        <div class="section">
+        <div class="section" id="simpleValuation">
           <h2>Starting valuation</h2>
           <div class="mode" role="group" aria-label="Starting valuation input">
             <button id="yieldMode" class="active" type="button">Enter YTM</button>
@@ -119,10 +132,23 @@
           <label class="suffix" id="valueLabel">Yield to maturity<input id="startValue" type="number" value="4.50" step="0.01"><span id="valueUnit">%</span></label>
           <div class="computed" id="computedValue"></div>
         </div>
+        <div class="section" id="curveInputs" hidden>
+          <h2>Zero curve</h2>
+          <div class="curve-node-grid" id="curveNodeInputs"></div>
+          <div class="curve-note">Continuously compounded zero rates. Cash-flow rates are linearly interpolated by maturity.</div>
+          <div class="computed" id="curveComputed"></div>
+        </div>
         <div class="section">
-          <div class="section-head"><h2>Yield path</h2><button class="small-button" id="addShock" type="button">+ Add shock</button></div>
-          <div id="shockRows"></div>
-          <div class="computed">Each shock is applied on its date and persists afterward. Multiple shocks are cumulative.</div>
+          <div id="simpleShockPanel">
+            <div class="section-head"><h2>Yield path</h2><button class="small-button" id="addShock" type="button">+ Add shock</button></div>
+            <div id="shockRows"></div>
+            <div class="computed">Each shock is applied on its date and persists afterward. Multiple shocks are cumulative.</div>
+          </div>
+          <div id="curveShockPanel" hidden>
+            <div class="section-head"><h2>Curve shocks</h2><button class="small-button" id="addCurveShock" type="button">+ Add shock</button></div>
+            <div id="curveShockRows"></div>
+            <div class="computed">Shock each tenor independently. Node shocks persist and accumulate; intermediate maturities are linearly interpolated.</div>
+          </div>
           <div class="error" id="error" role="alert"></div>
         </div>
         <div class="section">
@@ -137,7 +163,8 @@
           <div class="panel stat"><div class="stat-label">Initial dirty value</div><div class="stat-value" id="initialWealth">—</div><div class="stat-sub" id="initialPrice">—</div></div>
           <div class="panel stat"><div class="stat-label">Wealth at maturity</div><div class="stat-value" id="endingWealth">—</div><div class="stat-sub" id="endingPrice">Principal + coupon cash</div></div>
           <div class="panel stat"><div class="stat-label">Hold-to-maturity P&amp;L</div><div class="stat-value" id="pnl">—</div><div class="stat-sub" id="returnPct">—</div></div>
-          <div class="panel stat"><div class="stat-label">Solved YTM</div><div class="stat-value" id="solvedYield">—</div><div class="stat-sub">Nominal, compounded at frequency</div></div>
+          <div class="panel stat"><div class="stat-label" id="yieldStatLabel">Solved YTM</div><div class="stat-value" id="solvedYield">—</div><div class="stat-sub" id="yieldStatSub">Nominal, compounded at frequency</div></div>
+          <div class="panel stat"><div class="stat-label" id="rollDownLabel">1Y carry return</div><div class="stat-value" id="rollDownReturn">—</div><div class="stat-sub" id="rollDownSub">No-shock path</div></div>
           <div class="panel stat"><div class="stat-label">Shock paybacks</div><div class="stat-value" id="payback">—</div><div class="stat-sub" id="paybackSub">See schedule below</div></div>
         </section>
         <section class="panel chart-panel">
@@ -155,7 +182,7 @@
               <tbody id="paybackBody"></tbody>
             </table>
           </div>
-          <div class="method">Yield impact = shocked-path wealth minus no-shock wealth on the same date, using the same reinvestment rule. Direct bond-price impact converges toward zero at maturity; reinvestment choices can leave a residual difference.</div>
+          <div class="method" id="methodNote">Yield impact = shocked-path wealth minus no-shock wealth on the same date, using the same reinvestment rule. Direct bond-price impact converges toward zero at maturity; reinvestment choices can leave a residual difference.</div>
         </section>
       </main>
     </div>
@@ -164,7 +191,9 @@
 (() => {
   const $ = id => document.getElementById(id);
   const inputs = ['settle','maturity','coupon','frequency','dayCount','startValue','reinvestMode','reinvestRate'].map($);
-  let mode = 'yield', state = null, shockSeq = 1;
+  const curveTenors=[1,2,3,5,7,10,20,30];
+  const defaultCurve=[4.00,4.05,4.10,4.20,4.30,4.40,4.55,4.60];
+  let mode = 'yield', modelMode='simple', state = null, shockSeq = 1;
   const money = new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0});
   const num2 = new Intl.NumberFormat('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   const date = s => new Date(s + 'T12:00:00');
@@ -187,6 +216,23 @@
     const accrued=c*elapsed;
     return {dirty,clean:dirty-accrued,accrued,schedule:s};
   }
+  function interpRate(t,rates){
+    if(t<=curveTenors[0]) return rates[0];
+    if(t>=curveTenors[curveTenors.length-1]) return rates[rates.length-1];
+    for(let i=1;i<curveTenors.length;i++) if(t<=curveTenors[i]){
+      const w=(t-curveTenors[i-1])/(curveTenors[i]-curveTenors[i-1]);
+      return rates[i-1]+w*(rates[i]-rates[i-1]);
+    }
+    return rates[rates.length-1];
+  }
+  function curveBondMetrics(settle,maturity,coupon,freq,rates,kind){
+    const s=schedule(settle,maturity,freq); if(!s.next) return null;
+    const period=dc(s.prev,s.next,kind), elapsed=dc(s.prev,settle,kind)/period;
+    const c=100*coupon/freq; let dirty=0;
+    s.dates.forEach((d,i)=>{ const t=Math.max(0,days(settle,d)/365.25), cf=c+(i===s.dates.length-1?100:0); dirty+=cf*Math.exp(-interpRate(t,rates)*t); });
+    const accrued=c*elapsed;
+    return {dirty,clean:dirty-accrued,accrued,schedule:s};
+  }
   function solveYield(targetClean,p){
     let lo=-0.95*p.freq+1e-8, hi=2;
     const f=y=>bondMetrics(p.settle,p.maturity,p.coupon,p.freq,y,p.kind)?.clean-targetClean;
@@ -194,22 +240,25 @@
     for(let i=0;i<120;i++){ const mid=(lo+hi)/2; if(f(mid)>0) lo=mid; else hi=mid; }
     return (lo+hi)/2;
   }
-  function cumulativeShock(d,p){ return p.shocks.filter(s=>s.date<=d).reduce((a,s)=>a+s.bp,0); }
+  function cumulativeShock(d,p){ return p.shocks.filter(s=>s.date<=d).reduce((a,s)=>a+(s.bp||0),0); }
+  function cumulativeCurveShock(d,p){ return p.curveShocks.filter(s=>s.date<=d).reduce((a,s)=>a.map((v,i)=>v+s.bps[i]),curveTenors.map(()=>0)); }
+  function curveAt(d,p,ignoreShocks){ const shocks=ignoreShocks?curveTenors.map(()=>0):cumulativeCurveShock(d,p); return p.curveRates.map((r,i)=>r+shocks[i]/10000); }
   function yieldAt(d,p,ignoreShocks){ return p.y+(ignoreShocks?0:cumulativeShock(d,p))/10000; }
+  function metricsAt(d,p,ignoreShocks){ return p.model==='curve'?curveBondMetrics(d,p.maturity,p.coupon,p.freq,curveAt(d,p,ignoreShocks),p.kind):bondMetrics(d,p.maturity,p.coupon,p.freq,yieldAt(d,p,ignoreShocks),p.kind); }
   function reinvestedBondWealth(d,p,ignoreShocks){
     let face=p.face; const couponDates=schedule(p.settle,p.maturity,p.freq).dates.filter(x=>x<=d);
     for(const payDate of couponDates){
       if(payDate>=p.maturity) return face*(1+p.coupon/p.freq);
-      const couponCash=face*p.coupon/p.freq, px=bondMetrics(payDate,p.maturity,p.coupon,p.freq,yieldAt(payDate,p,ignoreShocks),p.kind);
+      const couponCash=face*p.coupon/p.freq, px=metricsAt(payDate,p,ignoreShocks);
       if(!px||px.dirty<=0) return NaN;
       face += couponCash/(px.dirty/100);
     }
     if(d>=p.maturity) return face*(1+p.coupon/p.freq);
-    const px=bondMetrics(d,p.maturity,p.coupon,p.freq,yieldAt(d,p,ignoreShocks),p.kind);
+    const px=metricsAt(d,p,ignoreShocks);
     return px?face*px.dirty/100:NaN;
   }
   function fixedAccountWealth(d,p,ignoreShocks){
-    const y2=yieldAt(d,p,ignoreShocks), px=d>=p.maturity?0:bondMetrics(d,p.maturity,p.coupon,p.freq,y2,p.kind)?.dirty;
+    const px=d>=p.maturity?0:metricsAt(d,p,ignoreShocks)?.dirty;
     if(!Number.isFinite(px)) return NaN;
     const rate=p.reinvestRate, payments=schedule(p.settle,p.maturity,p.freq).dates.filter(x=>x<=d);
     let cash=0;
@@ -220,22 +269,34 @@
     return p.face*px/100+cash;
   }
   function calcAtDate(d,p,ignoreShocks=false){
-    const bp=ignoreShocks?0:cumulativeShock(d,p), y2=yieldAt(d,p,ignoreShocks);
+    const bp=ignoreShocks?0:cumulativeShock(d,p), y2=p.model==='simple'?yieldAt(d,p,ignoreShocks):p.y;
     const wealth=p.reinvestMode==='bond'?reinvestedBondWealth(d,p,ignoreShocks):fixedAccountWealth(d,p,ignoreShocks);
     if(!Number.isFinite(wealth)) return null;
     const pnl=wealth-p.initialWealth;
-    return {date:d,bp,y:y2,wealth,pnl,ret:pnl/p.initialWealth};
+    const curveBps=p.model==='curve'?(ignoreShocks?curveTenors.map(()=>0):cumulativeCurveShock(d,p)):null;
+    return {date:d,bp,y:y2,curveBps,wealth,pnl,ret:pnl/p.initialWealth};
+  }
+  function bpSummary(values){
+    const lo=Math.min(...values),hi=Math.max(...values),fmt=v=>`${v>=0?'+':''}${v.toFixed(0)}`;
+    return Math.abs(hi-lo)<1e-9?`${fmt(lo)} bp`:`${fmt(lo)}…${fmt(hi)} bp`;
   }
   function calculatePaybacks(p){
     return p.shocks.map((shock,index)=>{
       const before=new Date(+shock.date-1000), threshold=calcAtDate(before,p)?.wealth, after=calcAtDate(shock.date,p)?.wealth;
-      const cumulative=p.shocks.slice(0,index+1).reduce((a,s)=>a+s.bp,0), impact=after-threshold;
+      const cumulative=p.model==='simple'?p.shocks.slice(0,index+1).reduce((a,s)=>a+s.bp,0):p.shocks.slice(0,index+1).reduce((a,s)=>a.map((v,i)=>v+s.bps[i]),curveTenors.map(()=>0)), impact=after-threshold;
       if(!Number.isFinite(threshold)||!Number.isFinite(after)) return {shock,cumulative,impact:NaN,status:'invalid'};
-      if(shock.bp<=0||impact>=0) return {shock,cumulative,threshold,impact,date:shock.date,days:0,status:'no-loss'};
+      if(impact>=0) return {shock,cumulative,threshold,impact,date:shock.date,days:0,status:'no-loss'};
       const totalDays=Math.ceil(days(shock.date,p.maturity));
-      for(let i=1;i<=totalDays;i++){
+      for(let i=7;i<=totalDays+6;i+=7){
+        i=Math.min(i,totalDays);
         const d=new Date(+shock.date+i*86400000), w=calcAtDate(d,p)?.wealth;
-        if(Number.isFinite(w)&&w>=threshold) return {shock,cumulative,threshold,impact,date:d,days:i,status:'recovered'};
+        if(Number.isFinite(w)&&w>=threshold){
+          for(let j=Math.max(1,i-6);j<=i;j++){
+            const exactDate=new Date(+shock.date+j*86400000), exactWealth=calcAtDate(exactDate,p)?.wealth;
+            if(Number.isFinite(exactWealth)&&exactWealth>=threshold) return {shock,cumulative,threshold,impact,date:exactDate,days:j,status:'recovered'};
+          }
+        }
+        if(i===totalDays) break;
       }
       return {shock,cumulative,threshold,impact,date:null,days:null,status:'unrecovered'};
     });
@@ -245,33 +306,51 @@
   function setTone(el,v){ el.classList.toggle('positive',v>0); el.classList.toggle('negative',v<0); }
   function update(){
     $('error').textContent='';
-    const p={settle:date($('settle').value),maturity:date($('maturity').value),coupon:+$('coupon').value/100,freq:+$('frequency').value,face:Number($('face').value.replace(/,/g,'')),kind:$('dayCount').value,reinvestMode:$('reinvestMode').value,reinvestRate:+$('reinvestRate').value/100};
+    const p={model:modelMode,settle:date($('settle').value),maturity:date($('maturity').value),coupon:+$('coupon').value/100,freq:+$('frequency').value,face:Number($('face').value.replace(/,/g,'')),kind:$('dayCount').value,reinvestMode:$('reinvestMode').value,reinvestRate:+$('reinvestRate').value/100};
     if(!(p.maturity>p.settle)){ $('error').textContent='Maturity must be after settlement.'; return; }
     if(!(p.face>0)){ $('error').textContent='Face value must be greater than zero.'; return; }
-    p.shocks=[...document.querySelectorAll('.shock-row')].map(row=>({date:date(row.querySelector('.shock-date').value),bp:+row.querySelector('.shock-bp').value})).filter(s=>Number.isFinite(s.bp)&&s.date>p.settle&&s.date<p.maturity).sort((a,b)=>a.date-b.date);
+    p.simpleShocks=[...document.querySelectorAll('#shockRows .shock-row')].map(row=>({date:date(row.querySelector('.shock-date').value),bp:+row.querySelector('.shock-bp').value})).filter(s=>Number.isFinite(s.bp)&&s.date>p.settle&&s.date<p.maturity).sort((a,b)=>a.date-b.date);
+    p.curveRates=[...document.querySelectorAll('.curve-rate')].map(el=>+el.value/100);
+    p.curveShocks=[...document.querySelectorAll('.curve-shock-row')].map(row=>({date:date(row.querySelector('.curve-shock-date').value),bps:[...row.querySelectorAll('.curve-shock-bp')].map(el=>+el.value)})).filter(s=>s.date>p.settle&&s.date<p.maturity&&s.bps.every(Number.isFinite)).sort((a,b)=>a.date-b.date);
+    p.shocks=p.model==='simple'?p.simpleShocks:p.curveShocks;
     const v=+$('startValue').value;
-    p.y=mode==='yield'?v/100:solveYield(v,p);
+    if(p.model==='simple'){
+      p.y=mode==='yield'?v/100:solveYield(v,p);
+      p.initial=bondMetrics(p.settle,p.maturity,p.coupon,p.freq,p.y,p.kind);
+    } else {
+      if(p.curveRates.length!==curveTenors.length||p.curveRates.some(x=>!Number.isFinite(x))){ $('error').textContent='Enter a valid rate for every curve tenor.'; return; }
+      p.initial=curveBondMetrics(p.settle,p.maturity,p.coupon,p.freq,p.curveRates,p.kind);
+      p.y=solveYield(p.initial.clean,p);
+    }
     if(!Number.isFinite(p.y)){ $('error').textContent='A valid YTM could not be solved from this price.'; return; }
-    p.initial=bondMetrics(p.settle,p.maturity,p.coupon,p.freq,p.y,p.kind);
     p.initialWealth=p.initial.dirty*p.face/100;
-    const maturityPoint=calcAtDate(p.maturity,p), lastDate=p.shocks.length?p.shocks[p.shocks.length-1].date:p.maturity;
+    const maturityPoint=calcAtDate(p.maturity,p), rollDate=addMonths(p.settle,12)>p.maturity?p.maturity:addMonths(p.settle,12), rollPoint=calcAtDate(rollDate,p,true), lastDate=p.shocks.length?p.shocks[p.shocks.length-1].date:p.maturity;
     const selected=calcAtDate(lastDate,p), base=calcAtDate(lastDate,p,true);
     if(!selected||!base){ $('error').textContent='A shock produces an invalid YTM.'; return; }
     p.base=base; p.selected=selected; p.carry=base.pnl; p.priceImpact=selected.pnl-base.pnl; p.paybacks=calculatePaybacks(p);
     $('computedValue').innerHTML=mode==='yield' ? `Clean price <strong>${p.initial.clean.toFixed(4)}</strong> · accrued ${p.initial.accrued.toFixed(4)}` : `Solved YTM <strong>${(p.y*100).toFixed(4)}%</strong> · accrued ${p.initial.accrued.toFixed(4)}`;
+    $('curveComputed').innerHTML=`Curve clean price <strong>${p.initial.clean.toFixed(4)}</strong> · equivalent YTM <strong>${(p.y*100).toFixed(4)}%</strong>`;
     $('initialWealth').textContent=money.format(p.initialWealth); $('initialPrice').textContent=`Clean ${p.initial.clean.toFixed(4)} · Dirty ${p.initial.dirty.toFixed(4)}`;
     $('endingWealth').textContent=money.format(maturityPoint.wealth); $('endingPrice').textContent=`${p.reinvestMode==='bond'?'Coupons reinvested in bond':'Coupons compounded at '+(p.reinvestRate*100).toFixed(2)+'%'} · ${p.shocks.length} shock${p.shocks.length===1?'':'s'}`;
     $('pnl').textContent=signedMoney(maturityPoint.pnl); setTone($('pnl'),maturityPoint.pnl);
     $('returnPct').textContent=`Holding-period return ${signedPct(maturityPoint.ret)}`;
     $('solvedYield').textContent=`${(p.y*100).toFixed(4)}%`;
-    const lossRows=p.paybacks.filter(x=>x.shock.bp>0&&x.impact<0), recovered=lossRows.filter(x=>x.status==='recovered'||x.status==='no-loss').length;
+    $('rollDownReturn').textContent=signedPct(rollPoint.ret); setTone($('rollDownReturn'),rollPoint.ret);
+    const lossRows=p.paybacks.filter(x=>x.impact<0), recovered=lossRows.filter(x=>x.status==='recovered'||x.status==='no-loss').length;
     $('payback').textContent=p.shocks.length?`${recovered} / ${lossRows.length}`:'N/A'; $('paybackSub').textContent=p.shocks.length?'Positive shocks recovered':'Add a yield shock';
     $('paybackBody').innerHTML=p.paybacks.length?p.paybacks.map(x=>{
       const period=x.status==='no-loss'?'No loss':x.days===null?'Not before maturity':x.days<365?`${x.days} days`:`${(x.days/365.25).toFixed(2)} years`;
       const payDate=x.status==='no-loss'?'—':x.date?iso(x.date):'—';
-      return `<tr><td>${iso(x.shock.date)}</td><td>${x.shock.bp>=0?'+':''}${x.shock.bp.toFixed(0)} bp</td><td>${x.cumulative>=0?'+':''}${x.cumulative.toFixed(0)} bp</td><td>${Number.isFinite(x.impact)?signedMoney(x.impact):'—'}</td><td>${payDate}</td><td>${period}</td></tr>`;
+      const shockText=p.model==='simple'?`${x.shock.bp>=0?'+':''}${x.shock.bp.toFixed(0)} bp`:bpSummary(x.shock.bps);
+      const cumulativeText=p.model==='simple'?`${x.cumulative>=0?'+':''}${x.cumulative.toFixed(0)} bp`:bpSummary(x.cumulative);
+      return `<tr><td>${iso(x.shock.date)}</td><td>${shockText}</td><td>${cumulativeText}</td><td>${Number.isFinite(x.impact)?signedMoney(x.impact):'—'}</td><td>${payDate}</td><td>${period}</td></tr>`;
     }).join(''):`<tr><td colspan="6" style="text-align:center;color:var(--muted)">No shocks added</td></tr>`;
-    $('chartSubtitle').textContent=`${iso(p.settle)} → ${iso(p.maturity)} · initial YTM ${(p.y*100).toFixed(3)}% · ${p.shocks.length} dated shock${p.shocks.length===1?'':'s'}`;
+    $('chartSubtitle').textContent=p.model==='simple'?`${iso(p.settle)} → ${iso(p.maturity)} · initial YTM ${(p.y*100).toFixed(3)}% · ${p.shocks.length} dated shock${p.shocks.length===1?'':'s'}`:`${iso(p.settle)} → ${iso(p.maturity)} · static zero curve roll-down · ${p.shocks.length} dated curve shock${p.shocks.length===1?'':'s'}`;
+    $('yieldStatLabel').textContent=p.model==='simple'?'Solved YTM':'Equivalent YTM';
+    $('yieldStatSub').textContent=p.model==='simple'?'Nominal, compounded at frequency':'Implied by the interpolated zero curve';
+    $('rollDownLabel').textContent=p.model==='simple'?'1Y carry return':'1Y roll-down return';
+    $('rollDownSub').textContent=p.model==='simple'?'Unchanged YTM path':'Static interpolated curve';
+    $('methodNote').textContent=p.model==='simple'?'Yield impact = shocked-path wealth minus no-shock wealth on the same date, using the same reinvestment rule. Direct bond-price impact converges toward zero at maturity; reinvestment choices can leave a residual difference.':'Roll-down holds the zero curve fixed by tenor and reprices each shorter remaining cash flow using linear interpolation. Curve impact equals shocked-path wealth minus the static-curve path.';
     state=p; draw();
   }
   function draw(){
@@ -283,7 +362,7 @@
     const special=[state.settle,state.maturity,...state.shocks.flatMap(s=>[new Date(+s.date-1000),s.date,new Date(+s.date+1000)])];
     const dates=[...sampleDates,...special].filter(d=>d>=state.settle&&d<=state.maturity).sort((a,b)=>a-b);
     const data=dates.map(d=>calcAtDate(d,state)).filter(Boolean), baseData=dates.map(d=>calcAtDate(d,state,true)).filter(Boolean);
-    const ys=[...data,...baseData].map(d=>d.wealth); state.paybacks.filter(p=>p.shock.bp>0&&p.impact<0).forEach(p=>ys.push(p.threshold));
+    const ys=[...data,...baseData].map(d=>d.wealth); state.paybacks.filter(p=>p.impact<0).forEach(p=>ys.push(p.threshold));
     const yMin=Math.min(...ys),yMax=Math.max(...ys), pad=Math.max(1,(yMax-yMin)*.09), lo=yMin-pad,hi=yMax+pad;
     const x=d=>m.l+(+d-start)/span*iw, y=v=>m.t+(hi-v)/(hi-lo)*ih;
     const tickCount=W<520?4:6, xTicks=Array.from({length:tickCount},(_,i)=>new Date(start+span*i/(tickCount-1)));
@@ -296,14 +375,15 @@
       ${yTicks.map(v=>`<text x="${m.l-10}" y="${y(v)+4}" text-anchor="end">${Math.abs(v)>=1e6?(v/1e6).toFixed(2)+'m':Math.abs(v)>=1e3?(v/1e3).toFixed(0)+'k':v.toFixed(0)}</text>`).join('')}<text transform="translate(14 ${m.t+ih/2}) rotate(-90)" text-anchor="middle">Wealth ($)</text></g>
       <path class="base-curve" d="${basePath}"/><path class="curve" d="${path}"/>
       ${state.shocks.map(s=>`<line class="scenario-line" x1="${x(s.date)}" x2="${x(s.date)}" y1="${m.t}" y2="${H-m.b}"/>`).join('')}
-      ${state.paybacks.filter(p=>p.shock.bp>0&&p.impact<0).map((p,i)=>`<line class="payback-line" x1="${x(p.shock.date)}" x2="${x(p.date||state.maturity)}" y1="${y(p.threshold)}" y2="${y(p.threshold)}"/><text class="payback-label" x="${Math.min(W-m.r-4,x(p.date||state.maturity)+4)}" y="${y(p.threshold)-6}" text-anchor="end">payback ${i+1}</text>`).join('')}
+      ${state.paybacks.filter(p=>p.impact<0).map((p,i)=>`<line class="payback-line" x1="${x(p.shock.date)}" x2="${x(p.date||state.maturity)}" y1="${y(p.threshold)}" y2="${y(p.threshold)}"/><text class="payback-label" x="${Math.min(W-m.r-4,x(p.date||state.maturity)+4)}" y="${y(p.threshold)-6}" text-anchor="end">payback ${i+1}</text>`).join('')}
       <line id="hoverLine" class="hover-line" x1="0" x2="0" y1="${m.t}" y2="${H-m.b}" visibility="hidden"/><circle id="hoverDot" class="hover-dot" r="5" visibility="hidden"/><rect id="hit" x="${m.l}" y="${m.t}" width="${iw}" height="${ih}" fill="transparent"/>`;
     const hit=$('hit'), hline=$('hoverLine'), hdot=$('hoverDot');
     function hover(ev){
       const r=svg.getBoundingClientRect(), px=(ev.clientX-r.left)*W/r.width, ms=Math.max(start,Math.min(end,start+(px-m.l)/iw*span)), dt=new Date(ms), d=calcAtDate(dt,state), base=calcAtDate(dt,state,true);
       if(!d||!base)return; const carry=base.pnl, impact=d.pnl-carry, cx=x(dt),cy=y(d.wealth);
       hline.setAttribute('x1',cx);hline.setAttribute('x2',cx);hline.setAttribute('visibility','visible');hdot.setAttribute('cx',cx);hdot.setAttribute('cy',cy);hdot.setAttribute('visibility','visible');
-      tip.innerHTML=`<div class="tooltip-head"><span>${iso(dt)}</span><strong>YTM ${(d.y*100).toFixed(3)}%</strong></div><div class="tooltip-row"><span>Cumulative shock</span><strong>${d.bp>=0?'+':''}${d.bp.toFixed(0)} bp</strong></div><div class="tooltip-row"><span>Wealth</span><strong>${money.format(d.wealth)}</strong></div><div class="tooltip-row"><span>Total P&amp;L</span><strong>${signedMoney(d.pnl)}</strong></div><div class="tooltip-row"><span>Return</span><strong>${signedPct(d.ret)}</strong></div><div class="tooltip-row"><span>Carry + roll-down</span><strong>${signedMoney(carry)}</strong></div><div class="tooltip-row"><span>Yield price impact</span><strong>${signedMoney(impact)}</strong></div><div class="tooltip-row"><span>Reinvestment</span><strong>${state.reinvestMode==='bond'?'Same bond':(state.reinvestRate*100).toFixed(2)+'% cash'}</strong></div>`;
+      const shockText=state.model==='simple'?`${d.bp>=0?'+':''}${d.bp.toFixed(0)} bp`:bpSummary(d.curveBps);
+      tip.innerHTML=`<div class="tooltip-head"><span>${iso(dt)}</span><strong>${state.model==='simple'?'YTM '+(d.y*100).toFixed(3)+'%':'Curve model'}</strong></div><div class="tooltip-row"><span>Cumulative shock</span><strong>${shockText}</strong></div><div class="tooltip-row"><span>Wealth</span><strong>${money.format(d.wealth)}</strong></div><div class="tooltip-row"><span>Total P&amp;L</span><strong>${signedMoney(d.pnl)}</strong></div><div class="tooltip-row"><span>Return</span><strong>${signedPct(d.ret)}</strong></div><div class="tooltip-row"><span>Carry + roll-down</span><strong>${signedMoney(carry)}</strong></div><div class="tooltip-row"><span>${state.model==='simple'?'Yield':'Curve'} price impact</span><strong>${signedMoney(impact)}</strong></div><div class="tooltip-row"><span>Reinvestment</span><strong>${state.reinvestMode==='bond'?'Same bond':(state.reinvestRate*100).toFixed(2)+'% cash'}</strong></div>`;
       const tx=Math.min(wrap.clientWidth-230,Math.max(4,cx+(cx>W*.68?-228:14))), ty=Math.min(H-150,Math.max(4,cy-72)); tip.style.left=tx+'px';tip.style.top=ty+'px';tip.classList.add('show');
     }
     hit.addEventListener('pointermove',hover);
@@ -318,6 +398,17 @@
     row.innerHTML=`<label>Shock date<input class="shock-date" type="date" value="${dateValue}"></label><label class="suffix">Shock<input class="shock-bp" type="number" value="${bp}" step="5"><span>bp</span></label><button class="small-button remove-shock" type="button" aria-label="Remove shock">×</button>`;
     row.querySelectorAll('input').forEach(el=>el.addEventListener('input',update)); row.querySelector('button').onclick=()=>{row.remove();update();}; $('shockRows').appendChild(row);
   }
+  function buildCurveInputs(){
+    $('curveNodeInputs').innerHTML=curveTenors.map((t,i)=>`<label class="suffix">${t}Y<input class="curve-rate" type="number" value="${defaultCurve[i].toFixed(2)}" step="0.01"><span>%</span></label>`).join('');
+    document.querySelectorAll('.curve-rate').forEach(el=>el.addEventListener('input',scheduleUpdate));
+  }
+  function addCurveShock(dateValue,bps=curveTenors.map(()=>0)){
+    const row=document.createElement('div'); row.className='curve-shock-row';
+    row.innerHTML=`<div class="curve-shock-head"><label>Shock date<input class="curve-shock-date" type="date" value="${dateValue}"></label><button class="small-button remove-shock" type="button" aria-label="Remove curve shock">×</button></div><div class="curve-node-grid">${curveTenors.map((t,i)=>`<label class="suffix">${t}Y<input class="curve-shock-bp" type="number" value="${bps[i]??0}" step="5"><span>bp</span></label>`).join('')}</div>`;
+    row.querySelectorAll('input').forEach(el=>el.addEventListener('input',scheduleUpdate)); row.querySelector('button').onclick=()=>{row.remove();update();}; $('curveShockRows').appendChild(row);
+  }
+  let updateTimer;
+  function scheduleUpdate(){ clearTimeout(updateTimer); updateTimer=setTimeout(update,120); }
   function updateReinvestUI(){
     const cash=$('reinvestMode').value==='cash'; $('reinvestRateLabel').hidden=!cash;
     $('reinvestNote').textContent=cash?'Coupons enter a cash account and compound at the fixed annual effective return.':'Coupons buy additional face value at the bond’s dirty price on each payment date.';
@@ -326,17 +417,29 @@
     const el=$('face'), digits=el.value.replace(/\D/g,'');
     el.value=digits?Number(digits).toLocaleString('en-US'):'';
   }
+  function setModel(next){
+    modelMode=next; const simple=next==='simple';
+    $('simpleTab').classList.toggle('active',simple); $('curveTab').classList.toggle('active',!simple);
+    $('simpleTab').setAttribute('aria-selected',String(simple)); $('curveTab').setAttribute('aria-selected',String(!simple));
+    $('simpleValuation').hidden=!simple; $('curveInputs').hidden=simple; $('simpleShockPanel').hidden=!simple; $('curveShockPanel').hidden=simple;
+    update();
+  }
   function setMode(next){ mode=next; $('yieldMode').classList.toggle('active',mode==='yield');$('priceMode').classList.toggle('active',mode==='price');$('valueLabel').firstChild.textContent=mode==='yield'?'Yield to maturity':'Clean price per 100';$('valueUnit').textContent=mode==='yield'?'%':'$';$('startValue').value=mode==='yield'?'4.50':'98.50';update(); }
   $('yieldMode').onclick=()=>setMode('yield'); $('priceMode').onclick=()=>setMode('price');
+  $('simpleTab').onclick=()=>setModel('simple'); $('curveTab').onclick=()=>setModel('curve');
   $('addShock').onclick=()=>{ const s=date($('settle').value),m=date($('maturity').value); addShock(iso(new Date(+s+(+m-+s)/2)),25); update(); };
+  $('addCurveShock').onclick=()=>{ const s=date($('settle').value),m=date($('maturity').value); addCurveShock(iso(new Date(+s+(+m-+s)/2))); update(); };
   inputs.forEach(el=>el.addEventListener('input',update));
   $('face').addEventListener('input',()=>{formatFace();update();});
   $('reinvestMode').addEventListener('change',()=>{updateReinvestUI();update();});
   new ResizeObserver(draw).observe($('chartWrap'));
   const defaultSettle=new Date(), defaultMaturity=addMonths(defaultSettle,120);
   $('settle').value=iso(defaultSettle); $('maturity').value=iso(defaultMaturity);
+  buildCurveInputs();
   addShock(iso(addMonths(defaultSettle,3)),50);
   addShock(iso(addMonths(defaultSettle,36)),-25);
+  addCurveShock(iso(addMonths(defaultSettle,3)),curveTenors.map(()=>50));
+  addCurveShock(iso(addMonths(defaultSettle,36)),curveTenors.map(()=>-25));
   updateReinvestUI();
   update();
 })();
