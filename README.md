@@ -18,6 +18,8 @@ A dependency-free, single-page fixed-rate bond scenario tool. It can be hosted d
 - YTM compounds at the selected coupon frequency.
 - In Curve mode, enter continuously compounded zero rates at 1Y, 2Y, 3Y, 5Y, 7Y, 10Y, 20Y, and 30Y. Rates between nodes use linear interpolation.
 - Curve mode calculates static-curve roll-down and supports dated, independent shocks at every curve tenor.
+- Index mode models a bond index or ETF from investment amount, starting yield, constant modified duration, holding period, and optional convexity.
+- Index income is automatically reinvested at the prevailing yield. Each dated yield shock changes price using duration/convexity and changes future carry.
 - Add any number of dated YTM shocks between settlement and maturity.
 - Each shock persists after its date and combines cumulatively with later shocks.
 - Wealth at each date equals dirty bond value plus coupons received in cash.
@@ -26,3 +28,4 @@ A dependency-free, single-page fixed-rate bond scenario tool. It can be hosted d
 - The payback schedule covers every dated shock. For each positive yield shock that creates an immediate loss, payback is the first later date when the full shocked path regains the wealth level immediately before that shock. Later shocks can change each payback date. Negative shocks are shown as no-loss events.
 - Coupons can be reinvested fractionally in the same bond at its dirty price, or compounded in a fixed-return cash account.
 - Taxes, transaction costs, default risk, and curve-shape changes are excluded.
+- Index mode also excludes fees, tracking error, spread/default losses, and changes in duration or convexity.

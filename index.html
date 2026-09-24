@@ -20,7 +20,7 @@
     .workspace { display:grid; grid-template-columns:360px minmax(0,1fr); gap:18px; align-items:start; }
     .panel { background:rgba(255,255,255,.97); border:1px solid var(--line); border-radius:18px; box-shadow:var(--shadow); }
     .controls { padding:20px; position:sticky; top:18px; }
-    .model-tabs { display:grid; grid-template-columns:1fr 1fr; gap:6px; padding:4px; margin-bottom:18px; background:#eef2f7; border:1px solid var(--line); border-radius:11px; }
+    .model-tabs { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; padding:4px; margin-bottom:18px; background:#eef2f7; border:1px solid var(--line); border-radius:11px; }
     .model-tab { border:0; background:transparent; color:var(--muted); border-radius:8px; padding:9px 8px; font-weight:650; cursor:pointer; }
     .model-tab.active { color:#fff; background:var(--accent); }
     h2 { font-size:.96rem; margin:0 0 14px; letter-spacing:.01em; }
@@ -104,15 +104,16 @@
   <div class="app">
     <header>
       <div><div class="eyebrow">Fixed income scenario lab</div><h1>Bond Wealth Curve</h1></div>
-      <div class="header-note">Follow mark-to-market wealth from settlement to maturity. Add dated YTM shocks, then hover on any date for P&amp;L, return, and a carry / price-impact breakdown.</div>
+      <div class="header-note">Follow mark-to-market wealth across bond, curve, and index scenarios. Add dated yield shocks, then hover for P&amp;L, return, and a carry / price-impact breakdown.</div>
     </header>
     <div class="workspace">
       <aside class="panel controls">
         <div class="model-tabs" role="tablist" aria-label="Bond model">
           <button class="model-tab active" id="simpleTab" type="button" role="tab" aria-selected="true">Simple bond</button>
           <button class="model-tab" id="curveTab" type="button" role="tab" aria-selected="false">Curve</button>
+          <button class="model-tab" id="indexTab" type="button" role="tab" aria-selected="false">Index</button>
         </div>
-        <div class="section">
+        <div class="section" id="bondTerms">
           <h2>Bond terms</h2>
           <div class="grid2">
             <label>Settlement<input id="settle" type="date" value="2026-09-23"></label>
@@ -138,6 +139,18 @@
           <div class="curve-note">Continuously compounded zero rates. Cash-flow rates are linearly interpolated by maturity.</div>
           <div class="computed" id="curveComputed"></div>
         </div>
+        <div class="section" id="indexInputs" hidden>
+          <h2>Index assumptions</h2>
+          <div class="grid2">
+            <label>Start date<input id="indexStart" type="date"></label>
+            <label class="suffix">Holding period<input id="indexHorizon" type="number" value="5" min="0.1" step="0.5"><span>years</span></label>
+            <label class="suffix">Investment<input id="indexInvestment" type="text" inputmode="numeric" value="1,000,000" autocomplete="off"><span>$</span></label>
+            <label class="suffix">Starting yield<input id="indexYield" type="number" value="4.50" step="0.01"><span>%</span></label>
+            <label>Modified duration<input id="indexDuration" type="number" value="6.00" min="0" step="0.10"></label>
+            <label>Convexity (optional)<input id="indexConvexity" type="number" value="0" min="0" step="0.10"></label>
+          </div>
+          <div class="computed">Duration and convexity stay constant. Income accrues at the prevailing yield and is automatically reinvested.</div>
+        </div>
         <div class="section">
           <div id="simpleShockPanel">
             <div class="section-head"><h2>Yield path</h2><button class="small-button" id="addShock" type="button">+ Add shock</button></div>
@@ -149,9 +162,14 @@
             <div id="curveShockRows"></div>
             <div class="computed">Shock each tenor independently. Node shocks persist and accumulate; intermediate maturities are linearly interpolated.</div>
           </div>
+          <div id="indexShockPanel" hidden>
+            <div class="section-head"><h2>Index yield path</h2><button class="small-button" id="addIndexShock" type="button">+ Add shock</button></div>
+            <div id="indexShockRows"></div>
+            <div class="computed">Each yield shock persists and changes both mark-to-market value and future carry.</div>
+          </div>
           <div class="error" id="error" role="alert"></div>
         </div>
-        <div class="section">
+        <div class="section" id="reinvestSection">
           <h2>Coupon reinvestment</h2>
           <label>Method<select id="reinvestMode"><option value="bond" selected>Reinvest in this bond</option><option value="cash">Fixed-return cash account</option></select></label>
           <label class="suffix" id="reinvestRateLabel" hidden>Annual return<input id="reinvestRate" type="number" value="3.00" step="0.10"><span>%</span></label>
@@ -160,20 +178,20 @@
       </aside>
       <main>
         <section class="stats" aria-live="polite">
-          <div class="panel stat"><div class="stat-label">Initial dirty value</div><div class="stat-value" id="initialWealth">—</div><div class="stat-sub" id="initialPrice">—</div></div>
-          <div class="panel stat"><div class="stat-label">Wealth at maturity</div><div class="stat-value" id="endingWealth">—</div><div class="stat-sub" id="endingPrice">Principal + coupon cash</div></div>
-          <div class="panel stat"><div class="stat-label">Hold-to-maturity P&amp;L</div><div class="stat-value" id="pnl">—</div><div class="stat-sub" id="returnPct">—</div></div>
+          <div class="panel stat"><div class="stat-label" id="initialValueLabel">Initial dirty value</div><div class="stat-value" id="initialWealth">—</div><div class="stat-sub" id="initialPrice">—</div></div>
+          <div class="panel stat"><div class="stat-label" id="endingValueLabel">Wealth at maturity</div><div class="stat-value" id="endingWealth">—</div><div class="stat-sub" id="endingPrice">Principal + coupon cash</div></div>
+          <div class="panel stat"><div class="stat-label" id="pnlLabel">Hold-to-maturity P&amp;L</div><div class="stat-value" id="pnl">—</div><div class="stat-sub" id="returnPct">—</div></div>
           <div class="panel stat"><div class="stat-label" id="yieldStatLabel">Solved YTM</div><div class="stat-value" id="solvedYield">—</div><div class="stat-sub" id="yieldStatSub">Nominal, compounded at frequency</div></div>
           <div class="panel stat"><div class="stat-label" id="rollDownLabel">1Y carry return</div><div class="stat-value" id="rollDownReturn">—</div><div class="stat-sub" id="rollDownSub">No-shock path</div></div>
           <div class="panel stat"><div class="stat-label">Shock paybacks</div><div class="stat-value" id="payback">—</div><div class="stat-sub" id="paybackSub">See schedule below</div></div>
         </section>
         <section class="panel chart-panel">
           <div class="chart-top">
-            <div><div class="chart-title">Wealth through maturity</div><div class="chart-subtitle" id="chartSubtitle">Dirty bond value + coupon cash</div></div>
+            <div><div class="chart-title" id="chartTitle">Wealth through maturity</div><div class="chart-subtitle" id="chartSubtitle">Dirty bond value + coupon cash</div></div>
             <div class="legend"><span><i></i>Shocked path</span><span><i class="l2"></i>No-shock path</span><span style="color:var(--gold)">⋯ Payback level</span></div>
           </div>
           <div id="chartWrap">
-            <svg id="chart" role="img" aria-label="Bond wealth from settlement through maturity under dated YTM shocks"></svg>
+            <svg id="chart" role="img" aria-label="Fixed-income wealth path under dated yield shocks"></svg>
             <div class="tooltip" id="tooltip"></div>
           </div>
           <div class="payback-table-wrap">
@@ -191,6 +209,7 @@
 (() => {
   const $ = id => document.getElementById(id);
   const inputs = ['settle','maturity','coupon','frequency','dayCount','startValue','reinvestMode','reinvestRate'].map($);
+  const indexInputs = ['indexStart','indexHorizon','indexYield','indexDuration','indexConvexity'].map($);
   const curveTenors=[1,2,3,5,7,10,20,30];
   const defaultCurve=[4.00,4.05,4.10,4.20,4.30,4.40,4.55,4.60];
   let mode = 'yield', modelMode='simple', state = null, shockSeq = 1;
@@ -269,6 +288,18 @@
     return p.face*px/100+cash;
   }
   function calcAtDate(d,p,ignoreShocks=false){
+    if(p.model==='index'){
+      let wealth=p.initialWealth, cursor=p.settle, currentYield=p.y, cumulative=0;
+      const events=ignoreShocks?[]:p.shocks.filter(s=>s.date<=d);
+      for(const shock of events){
+        wealth*=Math.exp(currentYield*Math.max(0,days(cursor,shock.date)/365.25));
+        const dy=shock.bp/10000, priceFactor=1-p.duration*dy+.5*p.convexity*dy*dy;
+        wealth*=priceFactor; currentYield+=dy; cumulative+=shock.bp; cursor=shock.date;
+      }
+      wealth*=Math.exp(currentYield*Math.max(0,days(cursor,d)/365.25));
+      const pnl=wealth-p.initialWealth;
+      return Number.isFinite(wealth)&&wealth>=0?{date:d,bp:cumulative,y:currentYield,wealth,pnl,ret:pnl/p.initialWealth}:null;
+    }
     const bp=ignoreShocks?0:cumulativeShock(d,p), y2=p.model==='simple'?yieldAt(d,p,ignoreShocks):p.y;
     const wealth=p.reinvestMode==='bond'?reinvestedBondWealth(d,p,ignoreShocks):fixedAccountWealth(d,p,ignoreShocks);
     if(!Number.isFinite(wealth)) return null;
@@ -283,7 +314,7 @@
   function calculatePaybacks(p){
     return p.shocks.map((shock,index)=>{
       const before=new Date(+shock.date-1000), threshold=calcAtDate(before,p)?.wealth, after=calcAtDate(shock.date,p)?.wealth;
-      const cumulative=p.model==='simple'?p.shocks.slice(0,index+1).reduce((a,s)=>a+s.bp,0):p.shocks.slice(0,index+1).reduce((a,s)=>a.map((v,i)=>v+s.bps[i]),curveTenors.map(()=>0)), impact=after-threshold;
+      const cumulative=p.model==='curve'?p.shocks.slice(0,index+1).reduce((a,s)=>a.map((v,i)=>v+s.bps[i]),curveTenors.map(()=>0)):p.shocks.slice(0,index+1).reduce((a,s)=>a+s.bp,0), impact=after-threshold;
       if(!Number.isFinite(threshold)||!Number.isFinite(after)) return {shock,cumulative,impact:NaN,status:'invalid'};
       if(impact>=0) return {shock,cumulative,threshold,impact,date:shock.date,days:0,status:'no-loss'};
       const totalDays=Math.ceil(days(shock.date,p.maturity));
@@ -306,6 +337,7 @@
   function setTone(el,v){ el.classList.toggle('positive',v>0); el.classList.toggle('negative',v<0); }
   function update(){
     $('error').textContent='';
+    if(modelMode==='index'){ updateIndex(); return; }
     const p={model:modelMode,settle:date($('settle').value),maturity:date($('maturity').value),coupon:+$('coupon').value/100,freq:+$('frequency').value,face:Number($('face').value.replace(/,/g,'')),kind:$('dayCount').value,reinvestMode:$('reinvestMode').value,reinvestRate:+$('reinvestRate').value/100};
     if(!(p.maturity>p.settle)){ $('error').textContent='Maturity must be after settlement.'; return; }
     if(!(p.face>0)){ $('error').textContent='Face value must be greater than zero.'; return; }
@@ -353,6 +385,26 @@
     $('methodNote').textContent=p.model==='simple'?'Yield impact = shocked-path wealth minus no-shock wealth on the same date, using the same reinvestment rule. Direct bond-price impact converges toward zero at maturity; reinvestment choices can leave a residual difference.':'Roll-down holds the zero curve fixed by tenor and reprices each shorter remaining cash flow using linear interpolation. Curve impact equals shocked-path wealth minus the static-curve path.';
     state=p; draw();
   }
+  function updateIndex(){
+    const p={model:'index',settle:date($('indexStart').value),face:Number($('indexInvestment').value.replace(/,/g,'')),y:+$('indexYield').value/100,duration:+$('indexDuration').value,convexity:+$('indexConvexity').value,reinvestMode:'index'};
+    const horizon=+$('indexHorizon').value;
+    if(!(p.face>0&&horizon>0&&Number.isFinite(p.y)&&p.duration>=0&&p.convexity>=0)){ $('error').textContent='Enter valid index assumptions.'; return; }
+    p.maturity=addMonths(p.settle,Math.round(horizon*12)); p.initialWealth=p.face;
+    p.shocks=[...document.querySelectorAll('#indexShockRows .shock-row')].map(row=>({date:date(row.querySelector('.shock-date').value),bp:+row.querySelector('.shock-bp').value})).filter(s=>Number.isFinite(s.bp)&&s.date>p.settle&&s.date<p.maturity).sort((a,b)=>a.date-b.date);
+    const end=calcAtDate(p.maturity,p), oneYear=calcAtDate(addMonths(p.settle,12)>p.maturity?p.maturity:addMonths(p.settle,12),p,true);
+    p.paybacks=calculatePaybacks(p);
+    $('initialWealth').textContent=money.format(p.initialWealth); $('initialPrice').textContent='Starting investment';
+    $('endingWealth').textContent=money.format(end.wealth); $('endingPrice').textContent=`Income reinvested · ${p.shocks.length} shock${p.shocks.length===1?'':'s'}`;
+    $('pnl').textContent=signedMoney(end.pnl); setTone($('pnl'),end.pnl); $('returnPct').textContent=`Holding-period return ${signedPct(end.ret)}`;
+    $('solvedYield').textContent=`${(p.y*100).toFixed(2)}%`; $('yieldStatLabel').textContent='Starting yield'; $('yieldStatSub').textContent='Carry rate before shocks';
+    $('rollDownReturn').textContent=signedPct(oneYear.ret); setTone($('rollDownReturn'),oneYear.ret); $('rollDownLabel').textContent='1Y carry return'; $('rollDownSub').textContent='No-shock, income reinvested';
+    const lossRows=p.paybacks.filter(x=>x.impact<0), recovered=lossRows.filter(x=>x.status==='recovered').length;
+    $('payback').textContent=p.shocks.length?`${recovered} / ${lossRows.length}`:'N/A'; $('paybackSub').textContent=p.shocks.length?'Negative impacts recovered':'Add a yield shock';
+    $('paybackBody').innerHTML=p.paybacks.length?p.paybacks.map(x=>{ const period=x.status==='no-loss'?'No loss':x.days===null?'Not before horizon':x.days<365?`${x.days} days`:`${(x.days/365.25).toFixed(2)} years`; return `<tr><td>${iso(x.shock.date)}</td><td>${x.shock.bp>=0?'+':''}${x.shock.bp.toFixed(0)} bp</td><td>${x.cumulative>=0?'+':''}${x.cumulative.toFixed(0)} bp</td><td>${Number.isFinite(x.impact)?signedMoney(x.impact):'—'}</td><td>${x.status==='no-loss'?'—':x.date?iso(x.date):'—'}</td><td>${period}</td></tr>`; }).join(''):`<tr><td colspan="6" style="text-align:center;color:var(--muted)">No shocks added</td></tr>`;
+    $('chartSubtitle').textContent=`${iso(p.settle)} → ${iso(p.maturity)} · duration ${p.duration.toFixed(2)} · ${p.shocks.length} dated yield shock${p.shocks.length===1?'':'s'}`;
+    $('methodNote').textContent='Index price return at each shock is approximated by −Duration × ΔYield + ½ × Convexity × ΔYield². Duration and convexity remain constant; carry compounds continuously at the prevailing yield.';
+    state=p; draw();
+  }
   function draw(){
     if(!state) return;
     const wrap=$('chartWrap'), svg=$('chart'), tip=$('tooltip'), W=Math.max(300,wrap.clientWidth), H=wrap.clientHeight;
@@ -382,8 +434,10 @@
       const r=svg.getBoundingClientRect(), px=(ev.clientX-r.left)*W/r.width, ms=Math.max(start,Math.min(end,start+(px-m.l)/iw*span)), dt=new Date(ms), d=calcAtDate(dt,state), base=calcAtDate(dt,state,true);
       if(!d||!base)return; const carry=base.pnl, impact=d.pnl-carry, cx=x(dt),cy=y(d.wealth);
       hline.setAttribute('x1',cx);hline.setAttribute('x2',cx);hline.setAttribute('visibility','visible');hdot.setAttribute('cx',cx);hdot.setAttribute('cy',cy);hdot.setAttribute('visibility','visible');
-      const shockText=state.model==='simple'?`${d.bp>=0?'+':''}${d.bp.toFixed(0)} bp`:bpSummary(d.curveBps);
-      tip.innerHTML=`<div class="tooltip-head"><span>${iso(dt)}</span><strong>${state.model==='simple'?'YTM '+(d.y*100).toFixed(3)+'%':'Curve model'}</strong></div><div class="tooltip-row"><span>Cumulative shock</span><strong>${shockText}</strong></div><div class="tooltip-row"><span>Wealth</span><strong>${money.format(d.wealth)}</strong></div><div class="tooltip-row"><span>Total P&amp;L</span><strong>${signedMoney(d.pnl)}</strong></div><div class="tooltip-row"><span>Return</span><strong>${signedPct(d.ret)}</strong></div><div class="tooltip-row"><span>Carry + roll-down</span><strong>${signedMoney(carry)}</strong></div><div class="tooltip-row"><span>${state.model==='simple'?'Yield':'Curve'} price impact</span><strong>${signedMoney(impact)}</strong></div><div class="tooltip-row"><span>Reinvestment</span><strong>${state.reinvestMode==='bond'?'Same bond':(state.reinvestRate*100).toFixed(2)+'% cash'}</strong></div>`;
+      const shockText=state.model==='curve'?bpSummary(d.curveBps):`${d.bp>=0?'+':''}${d.bp.toFixed(0)} bp`;
+      const heading=state.model==='simple'?`YTM ${(d.y*100).toFixed(3)}%`:state.model==='curve'?'Curve model':`Yield ${(d.y*100).toFixed(3)}%`;
+      const impactLabel=state.model==='curve'?'Curve price impact':'Yield price impact', carryLabel=state.model==='index'?'Carry':'Carry + roll-down', reinvestText=state.model==='index'?'Income reinvested':state.reinvestMode==='bond'?'Same bond':(state.reinvestRate*100).toFixed(2)+'% cash';
+      tip.innerHTML=`<div class="tooltip-head"><span>${iso(dt)}</span><strong>${heading}</strong></div><div class="tooltip-row"><span>Cumulative shock</span><strong>${shockText}</strong></div><div class="tooltip-row"><span>Wealth</span><strong>${money.format(d.wealth)}</strong></div><div class="tooltip-row"><span>Total P&amp;L</span><strong>${signedMoney(d.pnl)}</strong></div><div class="tooltip-row"><span>Return</span><strong>${signedPct(d.ret)}</strong></div><div class="tooltip-row"><span>${carryLabel}</span><strong>${signedMoney(carry)}</strong></div><div class="tooltip-row"><span>${impactLabel}</span><strong>${signedMoney(impact)}</strong></div><div class="tooltip-row"><span>Reinvestment</span><strong>${reinvestText}</strong></div>`;
       const tx=Math.min(wrap.clientWidth-230,Math.max(4,cx+(cx>W*.68?-228:14))), ty=Math.min(H-150,Math.max(4,cy-72)); tip.style.left=tx+'px';tip.style.top=ty+'px';tip.classList.add('show');
     }
     hit.addEventListener('pointermove',hover);
@@ -407,6 +461,11 @@
     row.innerHTML=`<div class="curve-shock-head"><label>Shock date<input class="curve-shock-date" type="date" value="${dateValue}"></label><button class="small-button remove-shock" type="button" aria-label="Remove curve shock">×</button></div><div class="curve-node-grid">${curveTenors.map((t,i)=>`<label class="suffix">${t}Y<input class="curve-shock-bp" type="number" value="${bps[i]??0}" step="5"><span>bp</span></label>`).join('')}</div>`;
     row.querySelectorAll('input').forEach(el=>el.addEventListener('input',scheduleUpdate)); row.querySelector('button').onclick=()=>{row.remove();update();}; $('curveShockRows').appendChild(row);
   }
+  function addIndexShock(dateValue,bp=50){
+    const row=document.createElement('div'); row.className='shock-row';
+    row.innerHTML=`<label>Shock date<input class="shock-date" type="date" value="${dateValue}"></label><label class="suffix">Shock<input class="shock-bp" type="number" value="${bp}" step="5"><span>bp</span></label><button class="small-button remove-shock" type="button" aria-label="Remove index shock">×</button>`;
+    row.querySelectorAll('input').forEach(el=>el.addEventListener('input',scheduleUpdate)); row.querySelector('button').onclick=()=>{row.remove();update();}; $('indexShockRows').appendChild(row);
+  }
   let updateTimer;
   function scheduleUpdate(){ clearTimeout(updateTimer); updateTimer=setTimeout(update,120); }
   function updateReinvestUI(){
@@ -418,28 +477,35 @@
     el.value=digits?Number(digits).toLocaleString('en-US'):'';
   }
   function setModel(next){
-    modelMode=next; const simple=next==='simple';
-    $('simpleTab').classList.toggle('active',simple); $('curveTab').classList.toggle('active',!simple);
-    $('simpleTab').setAttribute('aria-selected',String(simple)); $('curveTab').setAttribute('aria-selected',String(!simple));
-    $('simpleValuation').hidden=!simple; $('curveInputs').hidden=simple; $('simpleShockPanel').hidden=!simple; $('curveShockPanel').hidden=simple;
+    modelMode=next; const simple=next==='simple', curve=next==='curve', index=next==='index';
+    [['simpleTab',simple],['curveTab',curve],['indexTab',index]].forEach(([id,on])=>{ $(id).classList.toggle('active',on); $(id).setAttribute('aria-selected',String(on)); });
+    $('bondTerms').hidden=index; $('simpleValuation').hidden=!simple; $('curveInputs').hidden=!curve; $('indexInputs').hidden=!index;
+    $('simpleShockPanel').hidden=!simple; $('curveShockPanel').hidden=!curve; $('indexShockPanel').hidden=!index; $('reinvestSection').hidden=index;
+    $('initialValueLabel').textContent=index?'Initial investment':'Initial dirty value'; $('endingValueLabel').textContent=index?'Wealth at horizon':'Wealth at maturity'; $('pnlLabel').textContent=index?'Holding-period P&L':'Hold-to-maturity P&L'; $('chartTitle').textContent=index?'Wealth through horizon':'Wealth through maturity';
     update();
   }
   function setMode(next){ mode=next; $('yieldMode').classList.toggle('active',mode==='yield');$('priceMode').classList.toggle('active',mode==='price');$('valueLabel').firstChild.textContent=mode==='yield'?'Yield to maturity':'Clean price per 100';$('valueUnit').textContent=mode==='yield'?'%':'$';$('startValue').value=mode==='yield'?'4.50':'98.50';update(); }
   $('yieldMode').onclick=()=>setMode('yield'); $('priceMode').onclick=()=>setMode('price');
-  $('simpleTab').onclick=()=>setModel('simple'); $('curveTab').onclick=()=>setModel('curve');
+  $('simpleTab').onclick=()=>setModel('simple'); $('curveTab').onclick=()=>setModel('curve'); $('indexTab').onclick=()=>setModel('index');
   $('addShock').onclick=()=>{ const s=date($('settle').value),m=date($('maturity').value); addShock(iso(new Date(+s+(+m-+s)/2)),25); update(); };
   $('addCurveShock').onclick=()=>{ const s=date($('settle').value),m=date($('maturity').value); addCurveShock(iso(new Date(+s+(+m-+s)/2))); update(); };
+  $('addIndexShock').onclick=()=>{ const s=date($('indexStart').value),m=addMonths(s,Math.round(+$('indexHorizon').value*12)); addIndexShock(iso(new Date(+s+(+m-+s)/2)),25); update(); };
   inputs.forEach(el=>el.addEventListener('input',update));
+  indexInputs.forEach(el=>el.addEventListener('input',scheduleUpdate));
   $('face').addEventListener('input',()=>{formatFace();update();});
+  $('indexInvestment').addEventListener('input',()=>{ const el=$('indexInvestment'),digits=el.value.replace(/\D/g,''); el.value=digits?Number(digits).toLocaleString('en-US'):''; scheduleUpdate(); });
   $('reinvestMode').addEventListener('change',()=>{updateReinvestUI();update();});
   new ResizeObserver(draw).observe($('chartWrap'));
   const defaultSettle=new Date(), defaultMaturity=addMonths(defaultSettle,120);
   $('settle').value=iso(defaultSettle); $('maturity').value=iso(defaultMaturity);
+  $('indexStart').value=iso(defaultSettle);
   buildCurveInputs();
   addShock(iso(addMonths(defaultSettle,3)),50);
   addShock(iso(addMonths(defaultSettle,36)),-25);
   addCurveShock(iso(addMonths(defaultSettle,3)),curveTenors.map(()=>50));
   addCurveShock(iso(addMonths(defaultSettle,36)),curveTenors.map(()=>-25));
+  addIndexShock(iso(addMonths(defaultSettle,3)),50);
+  addIndexShock(iso(addMonths(defaultSettle,24)),-25);
   updateReinvestUI();
   update();
 })();
