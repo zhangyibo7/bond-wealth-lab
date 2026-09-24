@@ -54,8 +54,10 @@
     .legend { display:flex; flex-wrap:wrap; gap:14px; font-size:.76rem; color:var(--muted); }
     .legend i { display:inline-block; width:18px; height:2px; vertical-align:middle; margin-right:5px; background:var(--accent); }
     .legend .l2 { background:var(--accent2); border-top:1px dashed var(--accent2); }
-    #chartWrap { position:relative; height:430px; min-height:300px; }
+    #chartWrap { position:relative; height:430px; min-height:300px; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; overscroll-behavior-x:contain; }
     svg { display:block; width:100%; height:100%; overflow:visible; }
+    #chart { touch-action:pan-y; user-select:none; -webkit-user-select:none; }
+    #chart text { pointer-events:none; }
     .axis text { fill:var(--muted); font-size:11px; }
     .axis line,.axis path { stroke:var(--line); }
     .grid line { stroke:var(--line); stroke-opacity:.6; }
@@ -304,7 +306,12 @@
       tip.innerHTML=`<div class="tooltip-head"><span>${iso(dt)}</span><strong>YTM ${(d.y*100).toFixed(3)}%</strong></div><div class="tooltip-row"><span>Cumulative shock</span><strong>${d.bp>=0?'+':''}${d.bp.toFixed(0)} bp</strong></div><div class="tooltip-row"><span>Wealth</span><strong>${money.format(d.wealth)}</strong></div><div class="tooltip-row"><span>Total P&amp;L</span><strong>${signedMoney(d.pnl)}</strong></div><div class="tooltip-row"><span>Return</span><strong>${signedPct(d.ret)}</strong></div><div class="tooltip-row"><span>Carry + roll-down</span><strong>${signedMoney(carry)}</strong></div><div class="tooltip-row"><span>Yield price impact</span><strong>${signedMoney(impact)}</strong></div><div class="tooltip-row"><span>Reinvestment</span><strong>${state.reinvestMode==='bond'?'Same bond':(state.reinvestRate*100).toFixed(2)+'% cash'}</strong></div>`;
       const tx=Math.min(wrap.clientWidth-230,Math.max(4,cx+(cx>W*.68?-228:14))), ty=Math.min(H-150,Math.max(4,cy-72)); tip.style.left=tx+'px';tip.style.top=ty+'px';tip.classList.add('show');
     }
-    hit.addEventListener('pointermove',hover); hit.addEventListener('pointerdown',hover); hit.addEventListener('pointerleave',()=>{tip.classList.remove('show');hline.setAttribute('visibility','hidden');hdot.setAttribute('visibility','hidden');});
+    hit.addEventListener('pointermove',hover);
+    hit.addEventListener('pointerdown',ev=>{ if(ev.pointerType==='touch'&&hit.setPointerCapture) hit.setPointerCapture(ev.pointerId); hover(ev); });
+    hit.addEventListener('pointerup',ev=>{ if(hit.hasPointerCapture?.(ev.pointerId)) hit.releasePointerCapture(ev.pointerId); });
+    hit.addEventListener('pointercancel',()=>{tip.classList.remove('show');hline.setAttribute('visibility','hidden');hdot.setAttribute('visibility','hidden');});
+    hit.addEventListener('pointerleave',()=>{tip.classList.remove('show');hline.setAttribute('visibility','hidden');hdot.setAttribute('visibility','hidden');});
+    wrap.addEventListener('selectstart',ev=>ev.preventDefault());
   }
   function addShock(dateValue,bp=50){
     const row=document.createElement('div'); row.className='shock-row'; row.dataset.id=shockSeq++;
