@@ -39,6 +39,8 @@
     .suffix input { padding-right:42px; }
     .computed { margin-top:9px; color:var(--muted); font-size:.8rem; }
     .computed strong { color:var(--ink); }
+    .toggle-row { display:flex; align-items:center; justify-content:space-between; gap:12px; color:var(--ink); font-size:.86rem; }
+    .toggle-row input { width:42px; height:23px; margin:0; accent-color:var(--accent); cursor:pointer; }
     .error { min-height:20px; margin-top:10px; color:var(--red); font-size:.8rem; }
     .shock-row { display:grid; grid-template-columns:minmax(0,1fr) 100px 32px; gap:8px; align-items:end; margin-bottom:9px; }
     .curve-node-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
@@ -175,6 +177,12 @@
           <label class="suffix" id="reinvestRateLabel" hidden>Annual return<input id="reinvestRate" type="number" value="3.00" step="0.10"><span>%</span></label>
           <div class="computed" id="reinvestNote">Coupons buy additional face value at the bond’s dirty price on each payment date.</div>
         </div>
+        <div class="section" id="fundingSection">
+          <h2>Funding cost</h2>
+          <label class="toggle-row" for="fundingEnabled"><span>Include funding cost</span><input id="fundingEnabled" type="checkbox" role="switch"></label>
+          <label class="suffix" id="fundingRateLabel" hidden>Annual funding cost<input id="fundingRate" type="number" value="3.00" min="0" step="0.10"><span>%</span></label>
+          <div class="computed" id="fundingNote">Off — results match the unfunded wealth path.</div>
+        </div>
       </aside>
       <main>
         <section class="stats" aria-live="polite">
@@ -208,7 +216,7 @@
 <script>
 (() => {
   const $ = id => document.getElementById(id);
-  const inputs = ['settle','maturity','coupon','frequency','dayCount','startValue','reinvestMode','reinvestRate'].map($);
+  const inputs = ['settle','maturity','coupon','frequency','dayCount','startValue','reinvestMode','reinvestRate','fundingRate'].map($);
   const indexInputs = ['indexStart','indexHorizon','indexYield','indexDuration','indexConvexity'].map($);
   const curveTenors=[1,2,3,5,7,10,20,30];
   const defaultCurve=[4.00,4.05,4.10,4.20,4.30,4.40,4.55,4.60];
@@ -287,6 +295,7 @@
     }
     return p.face*px/100+cash;
   }
+  function fundingCostAt(d,p){ return p.fundingEnabled?p.initialWealth*p.fundingRate*Math.max(0,days(p.settle,d)/365.25):0; }
   function calcAtDate(d,p,ignoreShocks=false){
     if(p.model==='index'){
       let wealth=p.initialWealth, cursor=p.settle, currentYield=p.y, cumulative=0;
@@ -297,15 +306,16 @@
         wealth*=priceFactor; currentYield+=dy; cumulative+=shock.bp; cursor=shock.date;
       }
       wealth*=Math.exp(currentYield*Math.max(0,days(cursor,d)/365.25));
+      const fundingCost=fundingCostAt(d,p); wealth-=fundingCost;
       const pnl=wealth-p.initialWealth;
-      return Number.isFinite(wealth)&&wealth>=0?{date:d,bp:cumulative,y:currentYield,wealth,pnl,ret:pnl/p.initialWealth}:null;
+      return Number.isFinite(wealth)&&wealth>=0?{date:d,bp:cumulative,y:currentYield,wealth,pnl,ret:pnl/p.initialWealth,fundingCost}:null;
     }
     const bp=ignoreShocks?0:cumulativeShock(d,p), y2=p.model==='simple'?yieldAt(d,p,ignoreShocks):p.y;
     const wealth=p.reinvestMode==='bond'?reinvestedBondWealth(d,p,ignoreShocks):fixedAccountWealth(d,p,ignoreShocks);
     if(!Number.isFinite(wealth)) return null;
-    const pnl=wealth-p.initialWealth;
+    const fundingCost=fundingCostAt(d,p), netWealth=wealth-fundingCost, pnl=netWealth-p.initialWealth;
     const curveBps=p.model==='curve'?(ignoreShocks?curveTenors.map(()=>0):cumulativeCurveShock(d,p)):null;
-    return {date:d,bp,y:y2,curveBps,wealth,pnl,ret:pnl/p.initialWealth};
+    return {date:d,bp,y:y2,curveBps,wealth:netWealth,pnl,ret:pnl/p.initialWealth,fundingCost};
   }
   function bpSummary(values){
     const lo=Math.min(...values),hi=Math.max(...values),fmt=v=>`${v>=0?'+':''}${v.toFixed(0)}`;
@@ -338,9 +348,10 @@
   function update(){
     $('error').textContent='';
     if(modelMode==='index'){ updateIndex(); return; }
-    const p={model:modelMode,settle:date($('settle').value),maturity:date($('maturity').value),coupon:+$('coupon').value/100,freq:+$('frequency').value,face:Number($('face').value.replace(/,/g,'')),kind:$('dayCount').value,reinvestMode:$('reinvestMode').value,reinvestRate:+$('reinvestRate').value/100};
+    const p={model:modelMode,settle:date($('settle').value),maturity:date($('maturity').value),coupon:+$('coupon').value/100,freq:+$('frequency').value,face:Number($('face').value.replace(/,/g,'')),kind:$('dayCount').value,reinvestMode:$('reinvestMode').value,reinvestRate:+$('reinvestRate').value/100,fundingEnabled:$('fundingEnabled').checked,fundingRate:+$('fundingRate').value/100};
     if(!(p.maturity>p.settle)){ $('error').textContent='Maturity must be after settlement.'; return; }
     if(!(p.face>0)){ $('error').textContent='Face value must be greater than zero.'; return; }
+    if(p.fundingEnabled&&!(p.fundingRate>=0)){ $('error').textContent='Enter a valid funding cost.'; return; }
     p.simpleShocks=[...document.querySelectorAll('#shockRows .shock-row')].map(row=>({date:date(row.querySelector('.shock-date').value),bp:+row.querySelector('.shock-bp').value})).filter(s=>Number.isFinite(s.bp)&&s.date>p.settle&&s.date<p.maturity).sort((a,b)=>a.date-b.date);
     p.curveRates=[...document.querySelectorAll('.curve-rate')].map(el=>+el.value/100);
     p.curveShocks=[...document.querySelectorAll('.curve-shock-row')].map(row=>({date:date(row.querySelector('.curve-shock-date').value),bps:[...row.querySelectorAll('.curve-shock-bp')].map(el=>+el.value)})).filter(s=>s.date>p.settle&&s.date<p.maturity&&s.bps.every(Number.isFinite)).sort((a,b)=>a.date-b.date);
@@ -363,7 +374,7 @@
     $('computedValue').innerHTML=mode==='yield' ? `Clean price <strong>${p.initial.clean.toFixed(4)}</strong> · accrued ${p.initial.accrued.toFixed(4)}` : `Solved YTM <strong>${(p.y*100).toFixed(4)}%</strong> · accrued ${p.initial.accrued.toFixed(4)}`;
     $('curveComputed').innerHTML=`Curve clean price <strong>${p.initial.clean.toFixed(4)}</strong> · equivalent YTM <strong>${(p.y*100).toFixed(4)}%</strong>`;
     $('initialWealth').textContent=money.format(p.initialWealth); $('initialPrice').textContent=`Clean ${p.initial.clean.toFixed(4)} · Dirty ${p.initial.dirty.toFixed(4)}`;
-    $('endingWealth').textContent=money.format(maturityPoint.wealth); $('endingPrice').textContent=`${p.reinvestMode==='bond'?'Coupons reinvested in bond':'Coupons compounded at '+(p.reinvestRate*100).toFixed(2)+'%'} · ${p.shocks.length} shock${p.shocks.length===1?'':'s'}`;
+    $('endingWealth').textContent=money.format(maturityPoint.wealth); $('endingPrice').textContent=`${p.reinvestMode==='bond'?'Coupons reinvested in bond':'Coupons compounded at '+(p.reinvestRate*100).toFixed(2)+'%'} · ${p.shocks.length} shock${p.shocks.length===1?'':'s'}${p.fundingEnabled?' · funding included':''}`;
     $('pnl').textContent=signedMoney(maturityPoint.pnl); setTone($('pnl'),maturityPoint.pnl);
     $('returnPct').textContent=`Holding-period return ${signedPct(maturityPoint.ret)}`;
     $('solvedYield').textContent=`${(p.y*100).toFixed(4)}%`;
@@ -382,19 +393,20 @@
     $('yieldStatSub').textContent=p.model==='simple'?'Nominal, compounded at frequency':'Implied by the interpolated zero curve';
     $('rollDownLabel').textContent=p.model==='simple'?'1Y carry return':'1Y roll-down return';
     $('rollDownSub').textContent=p.model==='simple'?'Unchanged YTM path':'Static interpolated curve';
-    $('methodNote').textContent=p.model==='simple'?'Yield impact = shocked-path wealth minus no-shock wealth on the same date, using the same reinvestment rule. Direct bond-price impact converges toward zero at maturity; reinvestment choices can leave a residual difference.':'Roll-down holds the zero curve fixed by tenor and reprices each shorter remaining cash flow using linear interpolation. Curve impact equals shocked-path wealth minus the static-curve path.';
+    const fundingText=p.fundingEnabled?` A fixed ${(p.fundingRate*100).toFixed(2)}% annual funding cost is deducted linearly from initial wealth over time.`:'';
+    $('methodNote').textContent=(p.model==='simple'?'Yield impact = shocked-path wealth minus no-shock wealth on the same date, using the same reinvestment rule. Direct bond-price impact converges toward zero at maturity; reinvestment choices can leave a residual difference.':'Roll-down holds the zero curve fixed by tenor and reprices each shorter remaining cash flow using linear interpolation. Curve impact equals shocked-path wealth minus the static-curve path.')+fundingText;
     state=p; draw();
   }
   function updateIndex(){
-    const p={model:'index',settle:date($('indexStart').value),face:Number($('indexInvestment').value.replace(/,/g,'')),y:+$('indexYield').value/100,duration:+$('indexDuration').value,convexity:+$('indexConvexity').value,reinvestMode:'index'};
+    const p={model:'index',settle:date($('indexStart').value),face:Number($('indexInvestment').value.replace(/,/g,'')),y:+$('indexYield').value/100,duration:+$('indexDuration').value,convexity:+$('indexConvexity').value,reinvestMode:'index',fundingEnabled:$('fundingEnabled').checked,fundingRate:+$('fundingRate').value/100};
     const horizon=+$('indexHorizon').value;
-    if(!(p.face>0&&horizon>0&&Number.isFinite(p.y)&&p.duration>=0&&p.convexity>=0)){ $('error').textContent='Enter valid index assumptions.'; return; }
+    if(!(p.face>0&&horizon>0&&Number.isFinite(p.y)&&p.duration>=0&&p.convexity>=0&&(!p.fundingEnabled||p.fundingRate>=0))){ $('error').textContent='Enter valid index assumptions.'; return; }
     p.maturity=addMonths(p.settle,Math.round(horizon*12)); p.initialWealth=p.face;
     p.shocks=[...document.querySelectorAll('#indexShockRows .shock-row')].map(row=>({date:date(row.querySelector('.shock-date').value),bp:+row.querySelector('.shock-bp').value})).filter(s=>Number.isFinite(s.bp)&&s.date>p.settle&&s.date<p.maturity).sort((a,b)=>a.date-b.date);
     const end=calcAtDate(p.maturity,p), oneYear=calcAtDate(addMonths(p.settle,12)>p.maturity?p.maturity:addMonths(p.settle,12),p,true);
     p.paybacks=calculatePaybacks(p);
     $('initialWealth').textContent=money.format(p.initialWealth); $('initialPrice').textContent='Starting investment';
-    $('endingWealth').textContent=money.format(end.wealth); $('endingPrice').textContent=`Income reinvested · ${p.shocks.length} shock${p.shocks.length===1?'':'s'}`;
+    $('endingWealth').textContent=money.format(end.wealth); $('endingPrice').textContent=`Income reinvested · ${p.shocks.length} shock${p.shocks.length===1?'':'s'}${p.fundingEnabled?' · funding included':''}`;
     $('pnl').textContent=signedMoney(end.pnl); setTone($('pnl'),end.pnl); $('returnPct').textContent=`Holding-period return ${signedPct(end.ret)}`;
     $('solvedYield').textContent=`${(p.y*100).toFixed(2)}%`; $('yieldStatLabel').textContent='Starting yield'; $('yieldStatSub').textContent='Carry rate before shocks';
     $('rollDownReturn').textContent=signedPct(oneYear.ret); setTone($('rollDownReturn'),oneYear.ret); $('rollDownLabel').textContent='1Y carry return'; $('rollDownSub').textContent='No-shock, income reinvested';
@@ -402,7 +414,7 @@
     $('payback').textContent=p.shocks.length?`${recovered} / ${lossRows.length}`:'N/A'; $('paybackSub').textContent=p.shocks.length?'Negative impacts recovered':'Add a yield shock';
     $('paybackBody').innerHTML=p.paybacks.length?p.paybacks.map(x=>{ const period=x.status==='no-loss'?'No loss':x.days===null?'Not before horizon':x.days<365?`${x.days} days`:`${(x.days/365.25).toFixed(2)} years`; return `<tr><td>${iso(x.shock.date)}</td><td>${x.shock.bp>=0?'+':''}${x.shock.bp.toFixed(0)} bp</td><td>${x.cumulative>=0?'+':''}${x.cumulative.toFixed(0)} bp</td><td>${Number.isFinite(x.impact)?signedMoney(x.impact):'—'}</td><td>${x.status==='no-loss'?'—':x.date?iso(x.date):'—'}</td><td>${period}</td></tr>`; }).join(''):`<tr><td colspan="6" style="text-align:center;color:var(--muted)">No shocks added</td></tr>`;
     $('chartSubtitle').textContent=`${iso(p.settle)} → ${iso(p.maturity)} · duration ${p.duration.toFixed(2)} · ${p.shocks.length} dated yield shock${p.shocks.length===1?'':'s'}`;
-    $('methodNote').textContent='Index price return at each shock is approximated by −Duration × ΔYield + ½ × Convexity × ΔYield². Duration and convexity remain constant; carry compounds continuously at the prevailing yield.';
+    $('methodNote').textContent='Index price return at each shock is approximated by −Duration × ΔYield + ½ × Convexity × ΔYield². Duration and convexity remain constant; carry compounds continuously at the prevailing yield.'+(p.fundingEnabled?` A fixed ${(p.fundingRate*100).toFixed(2)}% annual funding cost is deducted linearly from initial wealth over time.`:'');
     state=p; draw();
   }
   function draw(){
@@ -432,12 +444,13 @@
     const hit=$('hit'), hline=$('hoverLine'), hdot=$('hoverDot');
     function hover(ev){
       const r=svg.getBoundingClientRect(), px=(ev.clientX-r.left)*W/r.width, ms=Math.max(start,Math.min(end,start+(px-m.l)/iw*span)), dt=new Date(ms), d=calcAtDate(dt,state), base=calcAtDate(dt,state,true);
-      if(!d||!base)return; const carry=base.pnl, impact=d.pnl-carry, cx=x(dt),cy=y(d.wealth);
+      if(!d||!base)return; const carry=base.pnl+base.fundingCost, impact=d.pnl-base.pnl, cx=x(dt),cy=y(d.wealth);
       hline.setAttribute('x1',cx);hline.setAttribute('x2',cx);hline.setAttribute('visibility','visible');hdot.setAttribute('cx',cx);hdot.setAttribute('cy',cy);hdot.setAttribute('visibility','visible');
       const shockText=state.model==='curve'?bpSummary(d.curveBps):`${d.bp>=0?'+':''}${d.bp.toFixed(0)} bp`;
       const heading=state.model==='simple'?`YTM ${(d.y*100).toFixed(3)}%`:state.model==='curve'?'Curve model':`Yield ${(d.y*100).toFixed(3)}%`;
       const impactLabel=state.model==='curve'?'Curve price impact':'Yield price impact', carryLabel=state.model==='index'?'Carry':'Carry + roll-down', reinvestText=state.model==='index'?'Income reinvested':state.reinvestMode==='bond'?'Same bond':(state.reinvestRate*100).toFixed(2)+'% cash';
-      tip.innerHTML=`<div class="tooltip-head"><span>${iso(dt)}</span><strong>${heading}</strong></div><div class="tooltip-row"><span>Cumulative shock</span><strong>${shockText}</strong></div><div class="tooltip-row"><span>Wealth</span><strong>${money.format(d.wealth)}</strong></div><div class="tooltip-row"><span>Total P&amp;L</span><strong>${signedMoney(d.pnl)}</strong></div><div class="tooltip-row"><span>Return</span><strong>${signedPct(d.ret)}</strong></div><div class="tooltip-row"><span>${carryLabel}</span><strong>${signedMoney(carry)}</strong></div><div class="tooltip-row"><span>${impactLabel}</span><strong>${signedMoney(impact)}</strong></div><div class="tooltip-row"><span>Reinvestment</span><strong>${reinvestText}</strong></div>`;
+      const fundingRow=state.fundingEnabled?`<div class="tooltip-row"><span>Funding cost</span><strong>${signedMoney(-d.fundingCost)}</strong></div>`:'';
+      tip.innerHTML=`<div class="tooltip-head"><span>${iso(dt)}</span><strong>${heading}</strong></div><div class="tooltip-row"><span>Cumulative shock</span><strong>${shockText}</strong></div><div class="tooltip-row"><span>Wealth</span><strong>${money.format(d.wealth)}</strong></div><div class="tooltip-row"><span>Total P&amp;L</span><strong>${signedMoney(d.pnl)}</strong></div><div class="tooltip-row"><span>Return</span><strong>${signedPct(d.ret)}</strong></div><div class="tooltip-row"><span>${carryLabel}</span><strong>${signedMoney(carry)}</strong></div><div class="tooltip-row"><span>${impactLabel}</span><strong>${signedMoney(impact)}</strong></div>${fundingRow}<div class="tooltip-row"><span>Reinvestment</span><strong>${reinvestText}</strong></div>`;
       const tx=Math.min(wrap.clientWidth-230,Math.max(4,cx+(cx>W*.68?-228:14))), ty=Math.min(H-150,Math.max(4,cy-72)); tip.style.left=tx+'px';tip.style.top=ty+'px';tip.classList.add('show');
     }
     hit.addEventListener('pointermove',hover);
@@ -472,6 +485,10 @@
     const cash=$('reinvestMode').value==='cash'; $('reinvestRateLabel').hidden=!cash;
     $('reinvestNote').textContent=cash?'Coupons enter a cash account and compound at the fixed annual effective return.':'Coupons buy additional face value at the bond’s dirty price on each payment date.';
   }
+  function updateFundingUI(){
+    const enabled=$('fundingEnabled').checked; $('fundingRateLabel').hidden=!enabled;
+    $('fundingNote').textContent=enabled?'Deducted evenly over time as a fixed annual percentage of initial wealth.':'Off — results match the unfunded wealth path.';
+  }
   function formatFace(){
     const el=$('face'), digits=el.value.replace(/\D/g,'');
     el.value=digits?Number(digits).toLocaleString('en-US'):'';
@@ -495,6 +512,7 @@
   $('face').addEventListener('input',()=>{formatFace();update();});
   $('indexInvestment').addEventListener('input',()=>{ const el=$('indexInvestment'),digits=el.value.replace(/\D/g,''); el.value=digits?Number(digits).toLocaleString('en-US'):''; scheduleUpdate(); });
   $('reinvestMode').addEventListener('change',()=>{updateReinvestUI();update();});
+  $('fundingEnabled').addEventListener('change',()=>{updateFundingUI();update();});
   new ResizeObserver(draw).observe($('chartWrap'));
   const defaultSettle=new Date(), defaultMaturity=addMonths(defaultSettle,120);
   $('settle').value=iso(defaultSettle); $('maturity').value=iso(defaultMaturity);
@@ -507,6 +525,7 @@
   addIndexShock(iso(addMonths(defaultSettle,3)),50);
   addIndexShock(iso(addMonths(defaultSettle,24)),-25);
   updateReinvestUI();
+  updateFundingUI();
   update();
 })();
 </script>

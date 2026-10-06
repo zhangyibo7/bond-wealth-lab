@@ -20,6 +20,7 @@ A dependency-free, single-page fixed-rate bond scenario tool. It can be hosted d
 - Curve mode calculates static-curve roll-down and supports dated, independent shocks at every curve tenor.
 - Index mode models a bond index or ETF from investment amount, starting yield, constant modified duration, holding period, and optional convexity.
 - Index income is automatically reinvested at the prevailing yield. Each dated yield shock changes price using duration/convexity and changes future carry.
+- Every model has an optional fixed annual funding cost. When enabled, it is deducted linearly over time as a percentage of initial wealth and is included in wealth, P&L, returns, tooltips, and shock paybacks.
 - Add any number of dated YTM shocks between settlement and maturity.
 - Each shock persists after its date and combines cumulatively with later shocks.
 - Wealth at each date equals dirty bond value plus coupons received in cash.
